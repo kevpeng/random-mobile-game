@@ -17,6 +17,7 @@ Play: https://kevpeng.github.io/random-mobile-game/ — on iPhone, open in Safar
 ## Sort controls
 
 - Tap a tube to lift its top run of balls, tap another tube to drop them onto the same colour or into an empty tube
+- Or drag: press a tube and drag its top run onto another tube (valid targets light up); letting go anywhere else puts it back
 - Undo / Restart / Hint (solver-backed; tells you if you're stuck) / New
 
 ## Timers and haptics
