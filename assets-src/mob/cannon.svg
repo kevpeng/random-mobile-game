@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="256" viewBox="0 0 512 256">
+  <!--
+    Player cannon, 3/4 view from behind and above (it fires away from the camera).
+    Sheet: 2 frames of 256×256: [idle, recoil]. Anchor = bottom centre of the carriage (128, 236).
+    The carriage + wheels are ~200 px wide (the "unit" width used to size the sprite in the world).
+  -->
+  <defs>
+    <radialGradient id="metal" cx="0.36" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#a6d8ff"/>
+      <stop offset="0.45" stop-color="#3d8bff"/>
+      <stop offset="1" stop-color="#1a45b0"/>
+    </radialGradient>
+    <linearGradient id="tube" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8cc8ff"/>
+      <stop offset="0.35" stop-color="#3d8bff"/>
+      <stop offset="1" stop-color="#1a45b0"/>
+    </linearGradient>
+    <linearGradient id="wheel" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffe27a"/>
+      <stop offset="0.5" stop-color="#ffc93c"/>
+      <stop offset="1" stop-color="#d98a12"/>
+    </linearGradient>
+    <linearGradient id="cart" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a5bb8"/>
+      <stop offset="1" stop-color="#1c2f6e"/>
+    </linearGradient>
+    <radialGradient id="puff" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.6" stop-color="#fff4c4"/>
+      <stop offset="1" stop-color="#ffd166"/>
+    </radialGradient>
+
+    <!-- wheels + carriage never move -->
+    <g id="base">
+      <ellipse cx="50" cy="182" rx="28" ry="48" fill="url(#wheel)"/>
+      <ellipse cx="206" cy="182" rx="28" ry="48" fill="url(#wheel)"/>
+      <path fill="url(#cart)" d="M62 160 Q62 146 78 146 L178 146 Q194 146 194 160 L198 222 Q198 236 184 236 L72 236 Q58 236 58 222 Z"/>
+    </g>
+    <g id="baseDetails">
+      <ellipse cx="50" cy="182" rx="14" ry="30" fill="none" stroke="#b86e0c" stroke-width="5"/>
+      <ellipse cx="206" cy="182" rx="14" ry="30" fill="none" stroke="#b86e0c" stroke-width="5"/>
+      <ellipse cx="50" cy="182" rx="6" ry="11" fill="#7a4608"/>
+      <ellipse cx="206" cy="182" rx="6" ry="11" fill="#7a4608"/>
+      <ellipse cx="42" cy="160" rx="7" ry="12" fill="#fff" opacity="0.55"/>
+      <ellipse cx="198" cy="160" rx="7" ry="12" fill="#fff" opacity="0.45"/>
+    </g>
+
+    <!-- barrel: tube pointing away (up the screen), round breech toward the camera -->
+    <g id="barrel">
+      <path fill="url(#tube)" d="M84 70 L172 70 L180 160 L76 160 Z"/>
+      <circle cx="128" cy="166" r="56" fill="url(#metal)"/>
+      <circle cx="128" cy="222" r="14" fill="url(#wheel)"/>
+      <ellipse cx="128" cy="66" rx="50" ry="24" fill="#5aa2ff"/>
+    </g>
+    <g id="barrelDetails">
+      <ellipse cx="128" cy="66" rx="34" ry="14" fill="#0c1840"/>
+      <ellipse cx="128" cy="70" rx="26" ry="8" fill="#1a2a66"/>
+      <path d="M79 112 Q128 128 177 112" fill="none" stroke="#ffc93c" stroke-width="10" stroke-linecap="round"/>
+      <path d="M79 112 Q128 128 177 112" fill="none" stroke="#fff3b0" stroke-width="3" stroke-linecap="round" opacity="0.8" transform="translate(0 -3)"/>
+      <ellipse cx="102" cy="146" rx="15" ry="10" fill="#fff" opacity="0.55" transform="rotate(-30 102 146)"/>
+      <path d="M98 84 L96 104" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity="0.45"/>
+    </g>
+    <g id="puffs" fill="url(#puff)">
+      <circle cx="128" cy="56" r="26"/>
+      <circle cx="100" cy="64" r="18"/>
+      <circle cx="156" cy="64" r="18"/>
+      <circle cx="112" cy="36" r="17"/>
+      <circle cx="146" cy="38" r="15"/>
+    </g>
+  </defs>
+
+  <!-- frame 0: idle -->
+  <g id="idle">
+    <g stroke="#10224a" stroke-width="10" stroke-linejoin="round">
+      <use href="#base"/>
+      <use href="#barrel"/>
+    </g>
+    <use href="#base"/>
+    <use href="#baseDetails"/>
+    <use href="#barrel"/>
+    <use href="#barrelDetails"/>
+  </g>
+
+  <!-- frame 1: recoil — barrel kicked back toward the camera and squashed, muzzle puff -->
+  <g id="recoil" transform="translate(256 0)">
+    <g stroke="#10224a" stroke-width="10" stroke-linejoin="round">
+      <use href="#base"/>
+    </g>
+    <use href="#base"/>
+    <use href="#baseDetails"/>
+    <g transform="translate(128 236) scale(1.06 0.88) translate(-128 -228)">
+      <use href="#barrel" stroke="#10224a" stroke-width="10" stroke-linejoin="round"/>
+      <use href="#barrel"/>
+      <use href="#barrelDetails"/>
+    </g>
+    <use href="#puffs" stroke="#c07a10" stroke-width="8"/>
+    <use href="#puffs"/>
+  </g>
+</svg>

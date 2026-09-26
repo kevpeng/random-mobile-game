@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!--
+    Lane surface. u (x) spans the full lane width (clamped), v (y) repeats along the lane:
+    one tile = 2 world units of depth = two paving bands.
+    The lane is ~2x wider in the world than one tile is deep, so speckles are drawn tall
+    (ry > rx) and come out round on screen.
+  -->
+  <defs>
+    <g id="specks" fill="#e3d3b4">
+      <ellipse cx="40" cy="30" rx="1.6" ry="3"/>
+      <ellipse cx="92" cy="74" rx="1.3" ry="2.6"/>
+      <ellipse cx="150" cy="22" rx="1.6" ry="3"/>
+      <ellipse cx="206" cy="96" rx="1.3" ry="2.6"/>
+      <ellipse cx="66" cy="160" rx="1.6" ry="3"/>
+      <ellipse cx="128" cy="200" rx="1.3" ry="2.6"/>
+      <ellipse cx="184" cy="170" rx="1.6" ry="3"/>
+      <ellipse cx="110" cy="112" rx="1.3" ry="2.6"/>
+      <ellipse cx="226" cy="236" rx="1.3" ry="2.6"/>
+      <ellipse cx="30" cy="222" rx="1.3" ry="2.6"/>
+    </g>
+  </defs>
+  <!-- two paving bands -->
+  <rect width="256" height="128" fill="#f6eddb"/>
+  <rect y="128" width="256" height="128" fill="#efe3cb"/>
+  <!-- soft grooves between bands (at the top of each band, so the tile wraps cleanly) -->
+  <rect y="0" width="256" height="4" fill="#e2d1b0"/>
+  <rect y="4" width="256" height="3" fill="#fbf6ec"/>
+  <rect y="128" width="256" height="4" fill="#dfcdaa"/>
+  <rect y="132" width="256" height="3" fill="#f7efe0"/>
+  <use href="#specks"/>
+  <!-- curbs along both edges -->
+  <rect x="0" width="14" height="256" fill="#e6d3ad"/>
+  <rect x="14" width="3" height="256" fill="#fbf4e6"/>
+  <rect x="242" width="14" height="256" fill="#e6d3ad"/>
+  <rect x="239" width="3" height="256" fill="#d9c49b"/>
+</svg>

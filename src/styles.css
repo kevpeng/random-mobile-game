@@ -901,6 +901,9 @@ button {
 }
 .mob__coins {
   justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   background: var(--surface);
@@ -987,12 +990,12 @@ button {
 }
 .mob__upgrade {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
   text-align: left;
   background: var(--bg);
-  padding: 10px 10px 10px 14px;
+  padding: 8px 10px 8px 8px;
   border-radius: 16px;
   font-weight: 700;
 }
@@ -1007,59 +1010,28 @@ button {
   margin-left: 4px;
 }
 .mob__upgrade .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   width: auto;
   min-width: 92px;
   padding: 10px 12px;
   font-size: 15px;
 }
 .art--mob {
+  display: block;
   border-radius: 12px;
-  overflow: hidden;
-  background: #cfe3b8;
-  display: grid;
-  place-items: center;
 }
-.art__lane {
-  position: relative;
-  width: 58%;
-  height: 100%;
-  background: #eee7da;
-  clip-path: polygon(22% 0, 78% 0, 100% 100%, 0 100%);
+.coin {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.2em;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.12));
 }
-.art__tower {
-  position: absolute;
-  top: 6%;
-  left: 38%;
-  width: 24%;
-  height: 16%;
-  background: #b91c1c;
-  border-radius: 2px;
-}
-.art__gate {
-  position: absolute;
-  top: 38%;
-  width: 46%;
-  height: 14%;
-  display: grid;
-  place-items: center;
-  font: 800 9px/1 -apple-system, system-ui, sans-serif;
-  font-style: normal;
-  color: #fff;
-}
-.art__gate--good {
-  left: 4%;
-  background: rgba(34, 195, 238, 0.8);
-}
-.art__gate--bad {
-  right: 4%;
-  background: rgba(244, 63, 94, 0.8);
-}
-.art__unit {
-  position: absolute;
-  width: 9%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: #3b82f6;
+.mob__upicon {
+  flex: none;
+  display: block;
 }
 
 @media (prefers-reduced-motion: reduce) {

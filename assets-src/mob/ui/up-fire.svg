@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Upgrade: fire rate. A chubby blue cannon (side view) with speed streaks and a bolt. -->
+  <defs>
+    <linearGradient id="barrel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9fd6ff"/>
+      <stop offset="0.45" stop-color="#3d8bff"/>
+      <stop offset="1" stop-color="#1c4fc4"/>
+    </linearGradient>
+    <radialGradient id="gold" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#fff6c2"/>
+      <stop offset="0.5" stop-color="#ffc93c"/>
+      <stop offset="1" stop-color="#d98a12"/>
+    </radialGradient>
+  </defs>
+  <g fill="none" stroke="#ff9f1c" stroke-width="4" stroke-linecap="round">
+    <path d="M4 22 h10 M2 31 h9 M6 40 h8"/>
+  </g>
+  <g stroke="#10224a" stroke-width="4" stroke-linejoin="round">
+    <path d="M16 38 Q14 24 26 22 L50 16 Q56 15 57 21 L59 33 Q60 39 54 40 L30 46 Q18 50 16 38 Z" fill="url(#barrel)"/>
+    <ellipse cx="57.5" cy="27" rx="3.5" ry="9" fill="#0c1840" transform="rotate(-12 57.5 27)"/>
+    <circle cx="28" cy="48" r="10" fill="url(#gold)"/>
+  </g>
+  <circle cx="28" cy="48" r="3.5" fill="#7a4608"/>
+  <path d="M24 28 L44 23" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity="0.6"/>
+  <path d="M44 2 L36 16 L43 16 L38 28 L52 11 L45 11 L50 2 Z" fill="#ffd23c" stroke="#8a5a00" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

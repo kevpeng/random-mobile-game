@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!--
+    Gate panel "candy glass". White + alpha only: the renderer tints it cyan (good) or pink (bad).
+    Repeats horizontally (one tile per gate-height of width); v is clamped (top = top of the panel).
+    Diagonal candy stripes with a period of 64 px so the tile wraps seamlessly.
+  -->
+  <defs>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0.5"/>
+    </linearGradient>
+    <g id="stripe">
+      <path d="M0 128 L64 0 L88 0 L24 128 Z"/>
+    </g>
+  </defs>
+  <rect width="128" height="128" fill="url(#fade)"/>
+  <g fill="#fff" fill-opacity="0.22">
+    <use href="#stripe" x="-128"/><use href="#stripe" x="-64"/><use href="#stripe"/>
+    <use href="#stripe" x="64"/><use href="#stripe" x="128"/>
+  </g>
+  <!-- glossy band near the top -->
+  <rect y="10" width="128" height="8" fill="#fff" fill-opacity="0.35"/>
+</svg>

@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="128" viewBox="0 0 512 128">
+  <!--
+    Brute (enemy, hp > 1), seen from the FRONT. Wider, darker red, cream horns, toothy grimace.
+    Sheet: 4 frames of 128×128, left to right = run cycle.
+    Feet rest on y = 118 (anchor 64,118). Drawn at 90% (see frame transforms) so horns/plume keep
+    clear of the frame edge; the body is ~56 px wide = one unit diameter.
+    Each frame: outline pass (parts stroked in ink), fill pass, then details.
+  -->
+  <defs>
+    <radialGradient id="skin" cx="0.34" cy="0.28" r="0.85">
+      <stop offset="0" stop-color="#ff8f8f"/>
+      <stop offset="0.42" stop-color="#d42a42"/>
+      <stop offset="1" stop-color="#8a1026"/>
+    </radialGradient>
+    <linearGradient id="limb" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d42a42"/>
+      <stop offset="1" stop-color="#8a1026"/>
+    </linearGradient>
+
+    <path id="bean" fill="url(#skin)" d="M64 30 C88 30 101 48 101 70 C101 95 85 106 64 106 C43 106 27 95 27 70 C27 48 40 30 64 30 Z"/>
+    <rect id="leg" fill="url(#limb)" x="-9" y="0" width="18" height="26" rx="7.5"/>
+    <rect id="legUp" fill="url(#limb)" x="-9" y="0" width="18" height="19" rx="7.5"/>
+    <ellipse id="arm" fill="url(#limb)" cx="0" cy="0" rx="9" ry="12"/>
+    <linearGradient id="horn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffaf0"/>
+      <stop offset="1" stop-color="#e6c595"/>
+    </linearGradient>
+    <g id="horns" fill="url(#horn)">
+      <path d="M40 44 C28 38 22 24 26 8 C33 20 44 26 54 34 Z"/>
+      <path d="M88 44 C100 38 106 24 102 8 C95 20 84 26 74 34 Z"/>
+    </g>
+    <!-- front view: angry brows, two dot eyes with glints, small frown -->
+    <g id="details">
+      <path d="M40 52 L58 60 M88 52 L70 60" fill="none" stroke="#33060f" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="53" cy="67" r="6.5" fill="#2a0710"/>
+      <circle cx="75" cy="67" r="6.5" fill="#2a0710"/>
+      <circle cx="51" cy="65" r="2.2" fill="#fff"/>
+      <circle cx="73" cy="65" r="2.2" fill="#fff"/>
+      <path d="M48 84 Q64 96 80 84 Q64 88 48 84 Z" fill="#2a0710" stroke="#2a0710" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M53 88 L56 81 L59 88 Z M69 88 L72 81 L75 88 Z" fill="#fff"/>
+      <ellipse cx="50" cy="44" rx="11" ry="7" fill="#fff" opacity="0.6" transform="rotate(-35 50 44)"/>
+    </g>
+
+    <!-- poses: legs + arms + body, shared by outline and fill passes -->
+    <g id="p0">
+      <use href="#legUp" transform="translate(52 91) rotate(18)"/>
+      <use href="#leg" x="74" y="92"/>
+      <g transform="rotate(-4 64 106) translate(0 1) translate(64 106) scale(1.03 0.97) translate(-64 -106)">
+        <use href="#arm" transform="translate(25 64) rotate(28)"/>
+        <use href="#arm" transform="translate(103 80) rotate(-8)"/>
+        <use href="#horns"/>
+        <use href="#bean"/>
+      </g>
+    </g>
+    <g id="p1">
+      <use href="#leg" x="56" y="92"/>
+      <use href="#leg" x="72" y="92"/>
+      <g transform="translate(0 -4) translate(64 106) scale(0.97 1.03) translate(-64 -106)">
+        <use href="#arm" transform="translate(25 74) rotate(12)"/>
+        <use href="#arm" transform="translate(103 74) rotate(-12)"/>
+        <use href="#horns"/>
+        <use href="#bean"/>
+      </g>
+    </g>
+    <g id="p2">
+      <use href="#leg" x="54" y="92"/>
+      <use href="#legUp" transform="translate(76 91) rotate(-18)"/>
+      <g transform="rotate(4 64 106) translate(0 1) translate(64 106) scale(1.03 0.97) translate(-64 -106)">
+        <use href="#arm" transform="translate(25 80) rotate(8)"/>
+        <use href="#arm" transform="translate(103 64) rotate(-28)"/>
+        <use href="#horns"/>
+        <use href="#bean"/>
+      </g>
+    </g>
+    <g id="p3">
+      <use href="#leg" x="56" y="92"/>
+      <use href="#leg" x="72" y="92"/>
+      <g transform="translate(0 -3) translate(64 106) scale(0.98 1.02) translate(-64 -106)">
+        <use href="#arm" transform="translate(25 72) rotate(16)"/>
+        <use href="#arm" transform="translate(103 72) rotate(-16)"/>
+        <use href="#horns"/>
+        <use href="#bean"/>
+      </g>
+    </g>
+  </defs>
+
+  <g id="frame0" transform="translate(64 118) scale(0.9) translate(-64 -118)">
+    <use href="#p0" stroke="#33060f" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#p0"/>
+    <g transform="rotate(-4 64 106) translate(0 1) translate(64 106) scale(1.03 0.97) translate(-64 -106)"><use href="#details"/></g>
+  </g>
+  <g id="frame1" transform="translate(128 0) translate(64 118) scale(0.9) translate(-64 -118)">
+    <use href="#p1" stroke="#33060f" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#p1"/>
+    <g transform="translate(0 -4) translate(64 106) scale(0.97 1.03) translate(-64 -106)"><use href="#details"/></g>
+  </g>
+  <g id="frame2" transform="translate(256 0) translate(64 118) scale(0.9) translate(-64 -118)">
+    <use href="#p2" stroke="#33060f" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#p2"/>
+    <g transform="rotate(4 64 106) translate(0 1) translate(64 106) scale(1.03 0.97) translate(-64 -106)"><use href="#details"/></g>
+  </g>
+  <g id="frame3" transform="translate(384 0) translate(64 118) scale(0.9) translate(-64 -118)">
+    <use href="#p3" stroke="#33060f" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#p3"/>
+    <g transform="translate(0 -3) translate(64 106) scale(0.98 1.02) translate(-64 -106)"><use href="#details"/></g>
+  </g>
+</svg>

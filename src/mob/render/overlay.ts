@@ -49,7 +49,7 @@ export class Overlay {
     ctx.globalAlpha = 1;
 
     if (!w.endless) {
-      const top = r.toScreen(0, 2.05, w.length);
+      const top = r.towerTop;
       if (top) {
         const bw = Math.max(70, top.scale * 330), bh = 8;
         const frac = w.towerHp / w.towerMax;
