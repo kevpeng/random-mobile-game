@@ -132,12 +132,15 @@ const PITCH = (63 * Math.PI) / 180;
 const FRAME = { top: 0.17, bottom: 0.86 };
 const eyeFor = (tz: number, dist: number) => [0, Math.sin(PITCH) * dist, tz - Math.cos(PITCH) * dist];
 /**
- * The lane is drawn with depth compressed (sim units stay the same), so on a
- * portrait phone it reads wide and chunky like Mob Control, not a thin strip.
+ * Applied to the world before the camera:
+ * - depth is compressed (sim units stay the same), so on a portrait phone the
+ *   lane reads wide and chunky like Mob Control, not a thin strip;
+ * - x is mirrored, because a camera looking down +z with +y up draws +x on the
+ *   LEFT of the screen. Without this, dragging right moved the cannon left.
  */
 const DEPTH = 0.55;
 // prettier-ignore
-const SQUASH = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, DEPTH, 0, 0, 0, 0, 1]);
+const VIEW_FIX = new Float32Array([-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, DEPTH, 0, 0, 0, 0, 1]);
 
 export class Renderer {
   readonly gl: WebGL2RenderingContext;
@@ -220,7 +223,7 @@ export class Renderer {
     if (this.fit.key !== key) {
       let { dist, tz } = this.fit;
       for (let k = 0; k < 60; k++) {
-        const vp = multiply(proj, multiply(lookAt(eyeFor(tz, dist), [0, 0, tz]), SQUASH));
+        const vp = multiply(proj, multiply(lookAt(eyeFor(tz, dist), [0, 0, tz]), VIEW_FIX));
         const bottom = project(vp, 0, 0, -0.9, 1, 1);
         const top = project(vp, 0, 2.0, w.length + 0.4, 1, 1);
         if (!bottom || !top) {
@@ -235,7 +238,7 @@ export class Renderer {
     }
     const eye = eyeFor(this.fit.tz, this.fit.dist);
     eye[0] += shake * 0.04;
-    const view = multiply(lookAt(eye, [0, 0, this.fit.tz]), SQUASH);
+    const view = multiply(lookAt(eye, [0, 0, this.fit.tz]), VIEW_FIX);
     this.vp = multiply(proj, view);
     return { eye, view, proj };
   }
