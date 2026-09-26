@@ -18,6 +18,12 @@ Play: https://kevpeng.github.io/random-mobile-game/ — on iPhone, open in Safar
 - Tap a tube to lift its top run of balls, tap another tube to drop them onto the same colour or into an empty tube
 - Undo / Restart / Hint (solver-backed; tells you if you're stuck) / New
 
+## Timers and haptics
+
+Both games have a timer that starts on your first move, pauses while the app or game is in the background, and stops when you win (Sort also stops it on the out-of-moves screen). Best times are kept per board size / difficulty.
+
+Haptics on iPhone need **iOS 18+** with **Settings → Sounds & Haptics → System Haptics** on. Safari only allows one light tick, played as your finger lifts; Android gets full vibration patterns.
+
 ## Development
 
 ```sh

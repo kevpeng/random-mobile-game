@@ -3,10 +3,15 @@ import { shared } from './settings';
 /**
  * iOS Safari has no navigator.vibrate, but toggling a native
  * <input type="checkbox" switch> (iOS 18+) plays the system tick haptic.
- * We keep a hidden one and click its label. Elsewhere we fall back to
- * navigator.vibrate, and on anything else this silently does nothing.
+ * WebKit only allows that during a user activation, which for touch means
+ * touchend, not pointerdown. So on iOS a haptic call only *requests* a tick,
+ * and one document-level touchend listener plays it when the finger lifts.
+ * Game state still updates on pointerdown, so moves stay instant.
+ *
+ * Elsewhere we use navigator.vibrate patterns directly.
  */
 let label: HTMLLabelElement | null = null;
+let pending = false;
 
 function iosSwitch(): HTMLLabelElement {
   if (!label) {
@@ -33,9 +38,22 @@ function pulse(count: number, gap = 70): void {
     navigator.vibrate(pattern);
     return;
   }
-  const l = iosSwitch();
-  l.click();
-  for (let i = 1; i < count; i++) setTimeout(() => l.click(), i * gap);
+  // iOS plays at most one tick per activation, so every pattern becomes one tick.
+  pending = true;
+}
+
+/** Installs the touchend listener that plays requested ticks on iOS. */
+export function initHaptics(): void {
+  if (canVibrate) return;
+  document.addEventListener(
+    'touchend',
+    () => {
+      if (!pending) return;
+      pending = false;
+      iosSwitch().click();
+    },
+    { capture: true, passive: true },
+  );
 }
 
 export const haptic = {

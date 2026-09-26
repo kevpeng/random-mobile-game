@@ -1,11 +1,11 @@
 import { useSignal } from '@preact/signals';
-import { restoreOrStart, puzzle, won } from '../state/store';
+import { restoreOrStart, puzzle, timer, won } from '../state/store';
 import { Board } from './Board';
 import { haptic } from '../../shared/haptics';
 import { ChevronDown } from '../../shared/icons';
 import { BackButton } from '../../shared/BackButton';
 import { Menu } from './Menu';
-import { Timer } from './Timer';
+import { TimerView } from '../../shared/TimerView';
 import { Toolbar } from './Toolbar';
 import { WinOverlay } from './WinOverlay';
 
@@ -25,7 +25,7 @@ export function QueensGame() {
         >
           Queens · {n}×{n} <ChevronDown />
         </button>
-        <Timer />
+        <TimerView timer={timer} />
       </header>
       <main class="stage">
         <Board />

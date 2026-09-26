@@ -1,8 +1,9 @@
 import { useSignal } from '@preact/signals';
+import { formatTime } from '../../shared/format';
 import { haptic } from '../../shared/haptics';
 import { FeedbackToggles } from '../../shared/Toggles';
 import { MAX_COLORS, type SortConfig } from '../game';
-import { bests, config, newGame, PRESETS } from '../store';
+import { bestTimes, config, configKey, newGame, PRESETS } from '../store';
 
 function Stepper(props: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
   const set = (v: number) => {
@@ -24,8 +25,6 @@ function Stepper(props: { label: string; value: number; min: number; max: number
   );
 }
 
-const key = (c: SortConfig) => `${c.colors}x${c.height}x${c.empty}`;
-
 export function SortMenu(props: { onClose: () => void }) {
   const custom = useSignal<SortConfig>({ ...config.value });
   const cur = config.value;
@@ -40,13 +39,13 @@ export function SortMenu(props: { onClose: () => void }) {
         <h2>Difficulty</h2>
         <div class="presets">
           {PRESETS.map(({ name, config: c }) => {
-            const best = bests.value[key(c)];
+            const best = bestTimes.value[configKey(c)];
             const on = c.colors === cur.colors && c.height === cur.height && c.empty === cur.empty;
             return (
               <button key={name} class={`size${on ? ' size--on' : ''}`} onPointerDown={() => haptic.tap()} onClick={() => play(c)}>
                 <b>{name}</b>
                 <small>
-                  {c.colors} colours · {best !== undefined ? `best ${best}` : `${c.colors + c.empty} tubes`}
+                  {c.colors} colours · {best !== undefined ? `best ${formatTime(best)}` : `${c.colors + c.empty} tubes`}
                 </small>
               </button>
             );

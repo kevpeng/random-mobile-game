@@ -1,6 +1,7 @@
 import { batch, computed, effect, signal } from '@preact/signals';
 import { randomSeed } from '../shared/rng';
 import { load, save } from '../shared/storage';
+import { createTimer } from '../shared/timer';
 import {
   applyMove,
   colorsOf,
@@ -28,14 +29,18 @@ export function configName(c: SortConfig): string {
   return p ? p.name : `${c.colors}×${c.height}`;
 }
 
-const configKey = (c: SortConfig) => `${c.colors}x${c.height}x${c.empty}`;
+export const configKey = (c: SortConfig) => `${c.colors}x${c.height}x${c.empty}`;
 
 const CONFIG_KEY = 'sort:config:v1';
 const GAME_KEY = 'sort:game:v1';
 const BESTS_KEY = 'sort:bests:v1';
+const BEST_TIMES_KEY = 'sort:besttimes:v1';
 
 export const config = signal<SortConfig>(load(CONFIG_KEY, PRESETS[1].config));
+/** Fewest moves per setup. */
 export const bests = signal<Record<string, number>>(load(BESTS_KEY, {}));
+/** Fastest solve (ms) per setup. */
+export const bestTimes = signal<Record<string, number>>(load(BEST_TIMES_KEY, {}));
 
 export const puzzle = signal<SortPuzzle | null>(null);
 export const stacks = signal<number[][]>([]);
@@ -43,7 +48,9 @@ export const history = signal<number[][][]>([]);
 export const moves = signal(0);
 export const selected = signal<number | null>(null);
 export const won = signal(false);
-export const newBest = signal(false);
+/** Which records the current win set. */
+export const newBest = signal({ moves: false, time: false });
+export const timer = createTimer();
 /** A suggested move to highlight, or 'stuck' when there's no way forward. */
 export const hintMove = signal<Move | 'stuck' | null>(null);
 
@@ -106,9 +113,10 @@ function start(p: SortPuzzle): void {
     moves.value = 0;
     selected.value = null;
     won.value = false;
-    newBest.value = false;
+    newBest.value = { moves: false, time: false };
     hintMove.value = null;
   });
+  timer.reset();
 }
 
 export async function newGame(c: SortConfig = config.value): Promise<void> {
@@ -133,6 +141,7 @@ export function tapStack(i: number): TapResult {
   if (sel === null) {
     if (!cs[i].length || isComplete(cs[i], cap)) return 'blocked';
     selected.value = i;
+    timer.start();
     return 'lift';
   }
   if (sel === i) {
@@ -158,12 +167,20 @@ export function tapStack(i: number): TapResult {
   });
   const after = colorStacks.value;
   if (isSolved(after, cap)) {
+    timer.pause();
     const k = configKey(p.config);
-    const prev = bests.value[k];
+    const t = timer.elapsed();
+    const prevMoves = bests.value[k];
+    const prevTime = bestTimes.value[k];
+    const record = {
+      moves: prevMoves === undefined || moves.value < prevMoves,
+      time: prevTime === undefined || t < prevTime,
+    };
     batch(() => {
       won.value = true;
-      newBest.value = prev === undefined || moves.value < prev;
-      if (newBest.value) bests.value = { ...bests.value, [k]: moves.value };
+      newBest.value = record;
+      if (record.moves) bests.value = { ...bests.value, [k]: moves.value };
+      if (record.time) bestTimes.value = { ...bestTimes.value, [k]: t };
     });
     return 'win';
   }
@@ -181,6 +198,7 @@ export function undo(): void {
     selected.value = null;
     hintMove.value = null;
   });
+  timer.start();
 }
 
 let hintToken = 0;
@@ -211,7 +229,8 @@ export function restoreOrStart(): void {
     history: number[][][];
     moves: number;
     won: boolean;
-  }>(GAME_KEY, { puzzle: null, stacks: [], history: [], moves: 0, won: false });
+    elapsed: number;
+  }>(GAME_KEY, { puzzle: null, stacks: [], history: [], moves: 0, won: false, elapsed: 0 });
   if (saved.puzzle && saved.stacks.length === saved.puzzle.stacks.length) {
     batch(() => {
       puzzle.value = saved.puzzle;
@@ -220,6 +239,8 @@ export function restoreOrStart(): void {
       moves.value = saved.moves;
       won.value = saved.won;
     });
+    timer.reset(saved.elapsed);
+    if (!saved.won && saved.moves > 0 && !outOfMoves.value) timer.startWhenShown();
     prefetch(saved.puzzle.config);
   } else {
     void newGame();
@@ -232,9 +253,24 @@ export function restoreOrStart(): void {
       history: history.value.slice(-100),
       moves: moves.value,
       won: won.value,
+      elapsed: timer.elapsed(),
     });
   });
+  // The clock stops while the fail screen is up (Undo restarts it).
+  effect(() => {
+    if (outOfMoves.value) timer.pause();
+  });
+  if (typeof document !== 'undefined') {
+    const persistTime = () => {
+      if (!puzzle.value) return;
+      const g = load(GAME_KEY, {} as Record<string, unknown>);
+      save(GAME_KEY, { ...g, elapsed: timer.elapsed() });
+    };
+    document.addEventListener('visibilitychange', () => document.hidden && persistTime());
+    window.addEventListener('pagehide', persistTime);
+  }
 }
 
 effect(() => save(CONFIG_KEY, config.value));
 effect(() => save(BESTS_KEY, bests.value));
+effect(() => save(BEST_TIMES_KEY, bestTimes.value));

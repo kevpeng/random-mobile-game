@@ -25,7 +25,11 @@ test('home → sort, pick up, move, undo, solve', async ({ page }) => {
   const cap = puzzle.config.height;
   await page.screenshot({ path: 'test-results/sort-01-start.png' });
 
-  // Tapping a tube lifts it; tapping again puts it back.
+  // Clock waits for the first move.
+  await page.waitForTimeout(1200);
+  await expect(page.locator('.timer')).toContainText('0:00');
+
+  // Tapping a tube lifts it (and starts the clock); tapping again puts it back.
   await tapTube(page, 0);
   await expect(page.locator('.tube--sel')).toHaveCount(1);
   await page.waitForTimeout(250);
@@ -37,9 +41,9 @@ test('home → sort, pick up, move, undo, solve', async ({ page }) => {
   const empty = stacks.findIndex((s) => s.length === 0);
   await tapTube(page, 0);
   await tapTube(page, empty);
-  await expect(page.locator('.timer')).toHaveText('1');
+  await expect(page.locator('.timer small')).toHaveText('1 move');
   await page.getByRole('button', { name: 'Undo' }).click();
-  await expect(page.locator('.timer')).toHaveText('2');
+  await expect(page.locator('.timer small')).toHaveText('2 moves');
 
   // Hint highlights two tubes.
   await page.getByRole('button', { name: 'Hint' }).click();
@@ -53,8 +57,14 @@ test('home → sort, pick up, move, undo, solve', async ({ page }) => {
     await tapTube(page, t);
     cs = applyMove(cs, f, t, moveCount(cs, f, t, cap));
   }
-  await expect(page.getByRole('dialog', { name: 'Solved' })).toBeVisible();
+  const win = page.getByRole('dialog', { name: 'Solved' });
+  await expect(win).toBeVisible();
+  await expect(win.locator('.win__time')).toHaveText(/^\d+:\d\d$/);
+  await expect(win.locator('.win__meta')).toContainText('moves');
+  await expect(page.locator('.timer')).not.toContainText('0:00');
+  const stopped = await page.locator('.timer').textContent();
   await page.waitForTimeout(1200);
+  await expect(page.locator('.timer')).toHaveText(stopped!);
   await page.screenshot({ path: 'test-results/sort-03-win.png' });
   await page.getByRole('button', { name: 'Next puzzle' }).click();
   await expect(page.getByRole('dialog', { name: 'Solved' })).toHaveCount(0);
@@ -121,5 +131,6 @@ test('out of moves shows the fail screen; undo and restart clear it', async ({ p
   await expect(fail.getByRole('button', { name: 'Undo' })).toHaveCount(0);
   await fail.getByRole('button', { name: 'Restart' }).click();
   await expect(fail).toHaveCount(0);
-  await expect(page.locator('.timer')).toHaveText('0');
+  await expect(page.locator('.timer small')).toHaveText('0 moves');
+  await expect(page.locator('.timer')).toContainText('0:00');
 });

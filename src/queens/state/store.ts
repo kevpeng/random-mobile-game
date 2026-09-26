@@ -2,6 +2,7 @@ import { batch, computed, effect, signal } from '@preact/signals';
 import { blocked, conflicts, isSolved } from '../game/rules';
 import { EMPTY, QUEEN, type Puzzle } from '../game/types';
 import { load, save } from '../../shared/storage';
+import { createTimer } from '../../shared/timer';
 import { prefetch, takePuzzle } from './puzzles';
 
 export interface Settings {
@@ -28,24 +29,14 @@ export const hintsUsed = signal(0);
 /** True once a new best was set by the current win. */
 export const newBest = signal(false);
 
-// Timer: accumulated ms plus the running segment, if any.
-let accumulated = 0;
-let runningSince: number | null = null;
-export const timerTick = signal(0);
+export const timer = createTimer();
 
 export function elapsedMs(): number {
-  return accumulated + (runningSince === null ? 0 : performance.now() - runningSince);
+  return timer.elapsed();
 }
 
 function startTimer(): void {
-  if (runningSince === null && !won.value) runningSince = performance.now();
-}
-
-function pauseTimer(): void {
-  if (runningSince !== null) {
-    accumulated += performance.now() - runningSince;
-    runningSince = null;
-  }
+  if (!won.value) timer.start();
 }
 
 export const conflictCells = computed(() => {
@@ -88,7 +79,7 @@ export function endGesture(): 'win' | 'conflict' | 'change' | null {
 function checkWin(): boolean {
   const p = puzzle.value;
   if (!p || !isSolved(p, marks.value)) return false;
-  pauseTimer();
+  timer.pause();
   const t = elapsedMs();
   batch(() => {
     won.value = true;
@@ -138,7 +129,7 @@ export function hint(): boolean {
     hintsUsed.value++;
   });
   startTimer();
-  accumulated += HINT_PENALTY_MS;
+  timer.add(HINT_PENALTY_MS);
   checkWin();
   return true;
 }
@@ -146,8 +137,7 @@ export function hint(): boolean {
 // --- game lifecycle -----------------------------------------------------------
 
 function startPuzzle(p: Puzzle): void {
-  accumulated = 0;
-  runningSince = null;
+  timer.reset();
   batch(() => {
     puzzle.value = p;
     marks.value = new Array(p.size * p.size).fill(EMPTY);
@@ -178,7 +168,7 @@ export function restoreOrStart(): void {
     hints: number;
   }>(GAME_KEY, { puzzle: null, marks: [], history: [], elapsed: 0, won: false, hints: 0 });
   if (saved.puzzle && saved.marks.length === saved.puzzle.size ** 2) {
-    accumulated = saved.elapsed;
+    timer.reset(saved.elapsed);
     batch(() => {
       puzzle.value = saved.puzzle;
       marks.value = saved.marks;
@@ -187,7 +177,7 @@ export function restoreOrStart(): void {
       hintsUsed.value = saved.hints;
     });
     // Resume the clock only if play had begun.
-    if (!saved.won && saved.marks.some((m) => m !== EMPTY)) startTimer();
+    if (!saved.won && saved.marks.some((m) => m !== EMPTY)) timer.startWhenShown();
     prefetch(saved.puzzle.size);
   } else {
     void newGame();
@@ -214,16 +204,9 @@ effect(() => save(SETTINGS_KEY, settings.value));
 effect(() => save(BESTS_KEY, bests.value));
 
 if (typeof document !== 'undefined') {
+  // The shared timer pauses itself in the background; just save the game.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      pauseTimer();
-      if (puzzle.value) persistGame();
-    } else if (puzzle.value && !won.value && marks.value.some((m) => m !== EMPTY)) {
-      startTimer();
-    }
+    if (document.hidden && puzzle.value) persistGame();
   });
   window.addEventListener('pagehide', () => puzzle.value && persistGame());
-  setInterval(() => {
-    if (runningSince !== null) timerTick.value++;
-  }, 250);
 }
