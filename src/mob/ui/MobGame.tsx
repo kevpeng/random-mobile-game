@@ -8,7 +8,7 @@ import { Overlay, type Floater } from '../render/overlay';
 import { LANE, Renderer } from '../render/renderer';
 import { canUpgrade, lossCoins, UPGRADES, upgradeCost, winCoins } from '../sim/economy';
 import { endlessSpec, levelSpec } from '../sim/levels';
-import { BASE_HP, STEP, World } from '../sim/world';
+import { BASE_HP, CANNON_Z, STEP, World } from '../sim/world';
 import { addCoins, buy, levelUp, progress, recordEndless } from '../store';
 
 type Screen = 'menu' | 'playing' | 'won' | 'lost' | 'over' | 'shop';
@@ -196,6 +196,8 @@ export function MobGame() {
     if (location.search.includes('mobtest')) {
       (window as unknown as Record<string, unknown>).__mob = {
         world: () => world.current,
+        /** On-screen x (CSS px) of a sim lane position at the cannon's depth. */
+        screenX: (simX: number) => renderer.toScreen(simX, 0, CANNON_Z)?.x ?? NaN,
         run: (seconds: number) => {
           const w = world.current!;
           for (let s = 0; s < seconds * 60 && w.state === 'playing'; s++) w.step();
