@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { applyMove, colorsOf, moveCount, solve, type SortPuzzle } from '../../src/sort/game';
+import { applyMove, colorsOf, lastWinnable, moveCount, solve, type SortPuzzle } from '../../src/sort/game';
 
 async function savedPuzzle(page: Page): Promise<{ puzzle: SortPuzzle; stacks: number[][] }> {
   await page.waitForFunction(() => {
@@ -113,12 +113,12 @@ test('out of moves shows the fail screen; undo and restart clear it', async ({ p
     },
   );
   await page.reload();
-  const fail = page.getByRole('dialog', { name: 'Out of moves' });
+  const fail = page.getByRole('dialog', { name: 'No moves left' });
   await expect(fail).toBeVisible();
   await page.waitForTimeout(800);
   await page.screenshot({ path: 'test-results/sort-07-stuck.png' });
 
-  await fail.getByRole('button', { name: 'Undo' }).click();
+  await fail.getByRole('button', { name: 'Undo last move' }).click();
   await expect(fail).toHaveCount(0);
 
   // Back into the stuck position via storage, then Restart.
@@ -128,7 +128,7 @@ test('out of moves shows the fail screen; undo and restart clear it', async ({ p
   }, stuck);
   await page.reload();
   await expect(fail).toBeVisible();
-  await expect(fail.getByRole('button', { name: 'Undo' })).toHaveCount(0);
+  await expect(fail.getByRole('button', { name: 'Undo last move' })).toHaveCount(0);
   await fail.getByRole('button', { name: 'Restart' }).click();
   await expect(fail).toHaveCount(0);
   await expect(page.locator('.timer small')).toHaveText('0 moves');
@@ -252,4 +252,57 @@ test('drag and drop: valid drop moves, invalid or empty-space drop returns', asy
   await tapTube(page, empty);
   await tapTube(page, empty2);
   await expect(moves).toHaveText('2 moves');
+});
+
+test('dead end (moves left, but unwinnable) gets the full-screen dead-end dialog', async ({ page }) => {
+  // 3 colours, height 3, one spare tube; colours per piece id:
+  const colors = [0, 0, 1, 0, 2, 1, 1, 2, 2];
+  const initial = [[0, 1, 2], [3, 4, 5], [6, 7, 8], []];
+  const afterOne = [[0, 1], [3, 4, 5], [6, 7, 8], [2]];
+  const dead = [[0, 1], [3, 4], [6, 7, 8], [2, 5]];
+  const back = lastWinnable([initial, afterOne].map((s) => colorsOf({ colors }, s)), 3);
+
+  await page.goto('/');
+  await page.evaluate(
+    (game) => {
+      localStorage.setItem('sort:game:v1', JSON.stringify(game));
+      localStorage.setItem('puzzles:route:v1', JSON.stringify({ route: 'sort' }));
+    },
+    {
+      puzzle: { config: { colors: 3, height: 3, empty: 1 }, colors, stacks: initial, seed: 1 },
+      stacks: dead,
+      history: [initial, afterOne],
+      moves: 2,
+      won: false,
+      elapsed: 12_000,
+    },
+  );
+  await page.reload();
+  const dialog = page.getByRole('dialog', { name: 'Dead end' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('none of them can sort the tubes');
+  await expect(dialog).toContainText('0:12 · 2 moves');
+  // Clock is stopped while stuck.
+  await page.waitForTimeout(1200);
+  await expect(page.locator('.timer')).toContainText('0:12');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: 'test-results/sort-09-deadend.png' });
+
+  if (back !== null && back > 1) {
+    await dialog.getByRole('button', { name: /Back to last winnable/ }).click();
+  } else {
+    await expect(dialog.getByRole('button', { name: /Back to last winnable/ })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Undo last move' }).click();
+  }
+  await expect(dialog).toHaveCount(0);
+
+  // New puzzle from the dialog works too.
+  await page.evaluate((s) => {
+    const g = JSON.parse(localStorage.getItem('sort:game:v1')!);
+    localStorage.setItem('sort:game:v1', JSON.stringify({ ...g, stacks: s, history: [g.puzzle.stacks] }));
+  }, dead);
+  await page.reload();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'New puzzle' }).click();
+  await expect(dialog).toHaveCount(0);
 });
