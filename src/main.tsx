@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { registerSW } from 'virtual:pwa-register';
-import { QueensGame } from './queens/ui/QueensGame';
+import { App } from './App';
 import './styles.css';
 
-render(<QueensGame />, document.getElementById('app')!);
+render(<App />, document.getElementById('app')!);
 registerSW({ immediate: true });

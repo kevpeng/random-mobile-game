@@ -1,22 +1,6 @@
-import type { ComponentChildren } from 'preact';
 import { clearBoard, hint, history, marks, newGame, undo, won } from '../state/store';
-import { haptic } from '../../shared/haptics';
+import { ToolButton } from '../../shared/ToolButton';
 import { ClearIcon, HintIcon, NewIcon, UndoIcon } from '../../shared/icons';
-
-function ToolButton(props: { label: string; onPress: () => void; disabled?: boolean; children: ComponentChildren }) {
-  return (
-    <button
-      class="tool"
-      disabled={props.disabled}
-      // Fire on pointerdown-release via click, but haptic at touch start for snappiness.
-      onPointerDown={() => !props.disabled && haptic.tap()}
-      onClick={props.onPress}
-    >
-      {props.children}
-      <span>{props.label}</span>
-    </button>
-  );
-}
 
 export function Toolbar() {
   const isWon = won.value;

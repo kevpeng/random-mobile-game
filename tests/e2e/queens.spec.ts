@@ -24,8 +24,13 @@ async function tap(page: Page, i: number) {
   await page.mouse.up();
 }
 
-test('tap cycle, drag, undo and solving a puzzle', async ({ page }) => {
+async function openGame(page: Page) {
   await page.goto('/');
+  await page.locator('.game-card', { hasText: 'Queens' }).click();
+}
+
+test('tap cycle, drag, undo and solving a puzzle', async ({ page }) => {
+  await openGame(page);
   await expect(page.locator('.cell')).toHaveCount(64);
   const { puzzle } = await saved(page);
   const n = puzzle.size;
@@ -80,7 +85,7 @@ test('tap cycle, drag, undo and solving a puzzle', async ({ page }) => {
 });
 
 test('menu switches size and state survives reload', async ({ page }) => {
-  await page.goto('/');
+  await openGame(page);
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.screenshot({ path: 'test-results/05-menu.png' });
   await page.locator('.size', { hasText: '6' }).first().click();
@@ -93,7 +98,7 @@ test('menu switches size and state survives reload', async ({ page }) => {
 
 test('dark mode', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.goto('/');
+  await openGame(page);
   await expect(page.locator('.cell').first()).toBeVisible();
   await page.screenshot({ path: 'test-results/06-dark.png' });
 });

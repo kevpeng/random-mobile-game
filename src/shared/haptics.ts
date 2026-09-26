@@ -41,5 +41,6 @@ function pulse(count: number, gap = 70): void {
 export const haptic = {
   tap: () => pulse(1),
   conflict: () => pulse(2, 90),
+  success: () => pulse(2, 60),
   win: () => pulse(4, 110),
 };
