@@ -14,9 +14,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Queens',
-        short_name: 'Queens',
-        description: 'One queen per row, column and region.',
+        name: 'Puzzles',
+        short_name: 'Puzzles',
+        description: 'Queens and colour sort puzzles.',
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#f6f3ee',

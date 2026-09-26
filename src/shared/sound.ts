@@ -1,9 +1,9 @@
-import { settings } from '../state/store';
+import { shared } from './settings';
 
 let ctx: AudioContext | null = null;
 
 function blip(freq: number, dur = 0.05, when = 0, gain = 0.08): void {
-  if (!settings.value.sound) return;
+  if (!shared.value.sound) return;
   ctx ??= new AudioContext();
   const t = ctx.currentTime + when;
   const osc = ctx.createOscillator();

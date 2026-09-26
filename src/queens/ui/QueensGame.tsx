@@ -1,28 +1,30 @@
 import { useSignal } from '@preact/signals';
-import { puzzle, won } from '../state/store';
+import { restoreOrStart, puzzle, won } from '../state/store';
 import { Board } from './Board';
-import { haptic } from './haptics';
-import { ChevronDown } from './icons';
+import { haptic } from '../../shared/haptics';
+import { ChevronDown } from '../../shared/icons';
+import { BackButton } from '../../shared/BackButton';
 import { Menu } from './Menu';
 import { Timer } from './Timer';
 import { Toolbar } from './Toolbar';
 import { WinOverlay } from './WinOverlay';
 
-export function App() {
+export function QueensGame() {
+  restoreOrStart();
   const menu = useSignal(false);
   const n = puzzle.value?.size ?? 8;
   return (
     <div class="app">
       <header class="top">
+        <BackButton />
         <button
           class="chip"
           onPointerDown={() => haptic.tap()}
           onClick={() => (menu.value = true)}
           aria-label="Menu"
         >
-          {n}×{n} <ChevronDown />
+          Queens · {n}×{n} <ChevronDown />
         </button>
-        <h1>Queens</h1>
         <Timer />
       </header>
       <main class="stage">

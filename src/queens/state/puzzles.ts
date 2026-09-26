@@ -1,5 +1,5 @@
 import { generatePuzzle } from '../game/generator';
-import { randomSeed } from '../game/rng';
+import { randomSeed } from '../../shared/rng';
 import type { Puzzle } from '../game/types';
 
 /**

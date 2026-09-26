@@ -49,3 +49,15 @@ export const ChevronDown = () => (
     <path d="m6 9 6 6 6-6" {...s} stroke-width={2.4} />
   </svg>
 );
+
+export const ChevronLeft = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="m15 5-7 7 7 7" {...s} stroke-width={2.4} />
+  </svg>
+);
+
+export const RestartIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5" {...s} />
+  </svg>
+);
