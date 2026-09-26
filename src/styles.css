@@ -138,6 +138,10 @@ button {
 }
 .timer {
   justify-self: end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: 17px;
@@ -163,6 +167,12 @@ button {
 .back svg {
   width: 22px;
   height: 22px;
+}
+
+.timer small {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* ---- board ---- */

@@ -3,10 +3,14 @@ import { BackButton } from '../../shared/BackButton';
 import { Confetti } from '../../shared/Confetti';
 import { haptic } from '../../shared/haptics';
 import { ChevronDown, HintIcon, NewIcon, RestartIcon, UndoIcon } from '../../shared/icons';
+import { formatTime } from '../../shared/format';
+import { TimerView } from '../../shared/TimerView';
 import { ToolButton } from '../../shared/ToolButton';
 import {
   bests,
+  bestTimes,
   config,
+  configKey,
   configName,
   hint,
   hintMove,
@@ -18,15 +22,25 @@ import {
   puzzle,
   restart,
   restoreOrStart,
+  timer,
   undo,
   won,
 } from '../store';
 import { SortMenu } from './SortMenu';
 import { Tubes } from './Tubes';
 
+const plural = (n: number) => `${n} move${n === 1 ? '' : 's'}`;
+
 function SortWin() {
-  const c = puzzle.value!.config;
-  const best = bests.value[`${c.colors}x${c.height}x${c.empty}`];
+  const k = configKey(puzzle.value!.config);
+  const rec = newBest.value;
+  const bestTime = bestTimes.value[k];
+  const bestMoves = bests.value[k];
+  const meta = [plural(moves.value)];
+  if (rec.time && rec.moves) meta.push('★ New best');
+  else if (rec.time) meta.push('★ Best time');
+  else if (rec.moves) meta.push('★ Fewest moves');
+  else if (bestTime !== undefined) meta.push(`Best ${formatTime(bestTime)} / ${bestMoves}`);
   return (
     <>
       <Confetti />
@@ -34,8 +48,8 @@ function SortWin() {
         <div class="win__card">
           <div class="win__stats">
             <div class="win__title">Sorted</div>
-            <div class="win__time">{moves.value} moves</div>
-            <div class="win__meta">{newBest.value ? '★ New best' : best !== undefined ? `Best ${best}` : ''}</div>
+            <div class="win__time">{formatTime(timer.elapsed())}</div>
+            <div class="win__meta">{meta.join(' · ')}</div>
           </div>
           <button class="btn btn--primary" onPointerDown={() => haptic.tap()} onClick={() => void newGame()}>
             Next puzzle
@@ -55,7 +69,7 @@ function OutOfMoves() {
           <div class="win__title">No moves left</div>
           <div class="win__time">Stuck</div>
           <div class="win__meta">
-            {moves.value} move{moves.value === 1 ? '' : 's'}
+            {formatTime(timer.elapsed())} · {plural(moves.value)}
           </div>
         </div>
         <div class="fail__actions">
@@ -89,7 +103,7 @@ export function SortGame() {
         <button class="chip" onPointerDown={() => haptic.tap()} onClick={() => (menu.value = true)} aria-label="Menu">
           Sort · {configName(c)} <ChevronDown />
         </button>
-        <div class="timer">{moves.value}</div>
+        <TimerView timer={timer} sub={plural(moves.value)} />
       </header>
       <main class="stage stage--sort">
         <Tubes />
