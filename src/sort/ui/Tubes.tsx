@@ -44,7 +44,16 @@ function computeLayout(n: number, cap: number, W: number, H: number): Layout {
   return { tubeW, tubeH, d, step, pad, head, tubes, width, height: rows * rowH + (rows - 1) * gapY };
 }
 
-type Pos = { x: number; y: number; stack: number };
+type Pos = { x: number; y: number; stack: number; k: number; up: boolean };
+
+/** Motion timings (ms) — fixed, so every move feels the same. */
+const MOTION = { lift: 120, rise: 90, slide: 150, drop: 120 };
+const FLIGHT_SCALE = 1.06;
+const EASE = {
+  out: 'cubic-bezier(.2,.8,.3,1)',
+  inOut: 'cubic-bezier(.45,0,.25,1)',
+  drop: 'cubic-bezier(.4,0,.6,1)',
+};
 
 export function Tubes() {
   const wrap = useRef<HTMLDivElement>(null);
@@ -68,57 +77,75 @@ export function Tubes() {
   const cap = p?.config.height ?? 4;
   const L = p && size.w ? computeLayout(st.length, cap, size.w, size.h) : null;
 
-  // Target position of every piece.
+  // Geometry helpers. Lifted balls hang at a fixed "rail" height above their tube.
+  const xOf = (s: number) => L!.tubes[s].x + (L!.tubeW - L!.d) / 2;
+  const restY = (s: number, j: number) =>
+    L!.tubes[s].y + L!.tubeH - L!.pad - (j + 1) * L!.step + (L!.step - L!.d) / 2;
+  const railY = (s: number, k: number) => L!.tubes[s].y - L!.d - L!.tubeW * 0.12 + k * L!.step;
+
+  // Target position of every piece; k = its index from the top of its stack.
   const pos = new Map<number, Pos>();
   if (L) {
     st.forEach((ids, s) => {
-      const t = L.tubes[s];
       const lifted = sel === s ? topRun(cs[s]) : 0;
-      const liftBy = lifted ? t.y + L.tubeH - L.pad - ids.length * L.step - (t.y - L.d - L.tubeW * 0.1) : 0;
       ids.forEach((id, j) => {
-        const y = t.y + L.tubeH - L.pad - (j + 1) * L.step + (L.step - L.d) / 2;
-        pos.set(id, {
-          x: t.x + (L.tubeW - L.d) / 2,
-          y: j >= ids.length - lifted ? y - liftBy : y,
-          stack: s,
-        });
+        const k = ids.length - 1 - j;
+        const up = k < lifted;
+        pos.set(id, { x: xOf(s), y: up ? railY(s, k) : restY(s, j), stack: s, k, up });
       });
     });
   }
 
   // Animate pieces from where they were to where they are now (FLIP with WAAPI).
+  // Every move uses the same path and timing: rise to the rail (if not already
+  // there), slide straight across, drop straight in. A run moves as one unit.
   useLayoutEffect(() => {
     if (!L) return;
     const fresh = lastPuzzle.current !== p;
     lastPuzzle.current = p;
-    let order = 0;
+    const tr = (x: number, y: number) => `translate(${x}px, ${y}px)`;
     for (const [id, to] of pos) {
       const el = pieceEls.current.get(id);
       const from = lastPos.current.get(id);
       lastPos.current.set(id, to);
       if (!el || !from || fresh || (from.x === to.x && from.y === to.y)) continue;
       const running = el.getAnimations();
-      const start = running.length ? getComputedStyle(el).transform : `translate(${from.x}px, ${from.y}px)`;
+      const start = running.length ? getComputedStyle(el).transform : tr(from.x, from.y);
       running.forEach((a) => a.cancel());
-      const end = `translate(${to.x}px, ${to.y}px)`;
-      if (from.stack !== to.stack) {
-        // Arc: rise over the destination tube, then drop in.
-        const peak = Math.min(from.y, L.tubes[to.stack].y - L.d - L.tubeW * 0.1) - order * 2;
-        el.animate(
-          [
-            { transform: start },
-            { transform: `translate(${to.x}px, ${peak}px)`, offset: 0.55 },
-            { transform: end },
-          ],
-          { duration: 300, delay: order * 28, easing: 'cubic-bezier(.3,.7,.35,1)', fill: 'backwards' },
-        );
-        order++;
-      } else {
+      const end = tr(to.x, to.y);
+
+      if (from.stack === to.stack) {
+        // Lift or set down in place.
         el.animate([{ transform: start }, { transform: end }], {
-          duration: 170,
-          easing: 'cubic-bezier(.34,1.45,.64,1)',
+          duration: MOTION.lift,
+          easing: to.up ? EASE.out : EASE.inOut,
         });
+        continue;
       }
+      // Slide along the higher of the two rails (matters when crossing rows):
+      // straight up, straight across, straight down.
+      const rail = Math.min(railY(from.stack, to.k), railY(to.stack, to.k));
+      // Slightly larger while in flight, so passing over other tubes reads as "above".
+      const railFrom = `${tr(from.x, rail)} scale(${FLIGHT_SCALE})`;
+      const railTo = `${tr(to.x, rail)} scale(${FLIGHT_SCALE})`;
+      const rise = from.up && Math.abs(from.y - rail) < 0.5 ? 0 : MOTION.rise;
+      const total = rise + MOTION.slide + MOTION.drop;
+      const frames: Keyframe[] = [];
+      if (rise) {
+        frames.push({ transform: start, easing: EASE.out, offset: 0 });
+        frames.push({ transform: railFrom, easing: EASE.inOut, offset: rise / total });
+      } else {
+        frames.push({ transform: start, easing: EASE.inOut, offset: 0 });
+      }
+      frames.push({ transform: railTo, easing: EASE.drop, offset: (rise + MOTION.slide) / total });
+      frames.push({ transform: end, offset: 1 });
+      el.style.zIndex = '2'; // fly above resting balls
+      const anim = el.animate(frames, { duration: total, easing: 'linear' });
+      const settle = () => {
+        if (!el.getAnimations().length) el.style.zIndex = '';
+      };
+      anim.onfinish = settle;
+      anim.oncancel = settle;
     }
   });
 
@@ -195,6 +222,7 @@ export function Tubes() {
           {[...pos].map(([id, q]) => (
             <div
               key={id}
+              data-id={id}
               class="ball"
               ref={(el) => {
                 if (el) pieceEls.current.set(id, el);

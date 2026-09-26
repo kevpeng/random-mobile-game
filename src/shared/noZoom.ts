@@ -1,53 +1,96 @@
 /**
- * iOS Safari ignores `user-scalable=no`, and `touch-action` doesn't reliably
- * stop double-tap zoom either. Layers, strongest first:
+ * iOS Safari ignores `user-scalable=no`, and neither `touch-action` nor
+ * cancelling only the second tap reliably stops double-tap zoom. So we take
+ * over touch entirely: every touchstart is cancelled, which leaves iOS no
+ * gesture to zoom, scroll or long-press on. Pointer events (used by the Queens
+ * board and Sort tubes) still fire as normal.
  *
- * 1. On the play areas (Queens board, Sort tubes), which run purely on pointer
- *    events, cancel the second touchstart of a quick double tap. That stops the
- *    zoom gesture before iOS can recognise it; pointer events still fire.
- * 2. Everywhere, cancel the second touchend of a quick double tap. That also
- *    cancels the browser's click for the tap, so we click the tapped button,
- *    label or element ourselves to keep fast repeated taps working.
- * 3. Cancel dblclick and Safari's pinch gesture events.
+ * Cancelling touchstart also cancels the browser's click, so we make our own:
+ * when a touch lifts without having moved, we click the tapped button, label
+ * or element. Scrollable areas (the menu sheet) are left alone so they can
+ * scroll; there only a quick second tap is cancelled and re-clicked.
+ *
+ * Because :active styles depend on the native touch, pressed elements get an
+ * `is-pressed` class while a finger is down.
  */
-const WINDOW_MS = 500; // comfortably longer than iOS's double-tap window
-const PLAY_AREAS = '.board, .tubes-wrap';
+const SCROLLABLE = '.sheet';
+const DOUBLE_TAP_MS = 500;
+const MOVE_SLOP = 10;
+
+function clickTarget(target: EventTarget | null): void {
+  // The target can be an SVG icon inside a button, so match on Element.
+  const el = target instanceof Element ? target : null;
+  const t = el?.closest('button, label') ?? el;
+  if (t instanceof HTMLElement) {
+    if (!(t as HTMLButtonElement).disabled) t.click();
+  } else {
+    t?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+}
 
 export function preventZoom(): void {
+  let start: { x: number; y: number; target: EventTarget | null; owned: boolean } | null = null;
   let lastEnd = -Infinity;
-  const quick = (e: Event) => e.timeStamp - lastEnd < WINDOW_MS;
+  let pressed: Element | null = null;
+
+  const release = () => {
+    pressed?.classList.remove('is-pressed');
+    pressed = null;
+  };
 
   document.addEventListener(
     'touchstart',
     (e) => {
-      if (e.touches.length > 1) {
-        e.preventDefault(); // multi-finger: pinch
-        return;
-      }
       const el = e.target instanceof Element ? e.target : null;
-      if (quick(e) && e.cancelable && el?.closest(PLAY_AREAS)) e.preventDefault();
+      const inScroller = !!el?.closest(SCROLLABLE);
+      const quick = e.timeStamp - lastEnd < DOUBLE_TAP_MS;
+      // Own the touch unless it's a single finger in a scroller (so it can scroll).
+      const owned = e.touches.length > 1 || !inScroller || quick;
+      if (owned && e.cancelable) e.preventDefault();
+      const t = e.touches[0];
+      start = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY, target: e.target, owned } : null;
+      release();
+      pressed = el?.closest('button, label, .game-card') ?? null;
+      pressed?.classList.add('is-pressed');
     },
-    { passive: false },
+    { passive: false, capture: true },
+  );
+
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      const t = e.touches[0];
+      if (start && t && Math.hypot(t.clientX - start.x, t.clientY - start.y) > MOVE_SLOP) {
+        release();
+        if (!start.owned) start = null; // it's a scroll
+      }
+    },
+    { passive: true, capture: true },
   );
 
   document.addEventListener(
     'touchend',
     (e) => {
-      if (quick(e) && e.cancelable) {
-        e.preventDefault();
-        // The target can be an SVG icon inside a button, so match on Element.
-        const el = e.target instanceof Element ? e.target : null;
-        const target = el?.closest('button, label') ?? el;
-        if (target instanceof HTMLElement) {
-          if (!(target as HTMLButtonElement).disabled) target.click();
-        } else {
-          target?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        }
+      const s = start;
+      start = null;
+      release();
+      const t = e.changedTouches[0];
+      const still = s && t && Math.hypot(t.clientX - s.x, t.clientY - s.y) <= MOVE_SLOP;
+      // Owned touches (everything outside scrollers, plus quick second taps inside
+      // them) never get a native click, so a tap that didn't move gets ours.
+      if (s?.owned) {
+        if (e.cancelable) e.preventDefault();
+        if (still) clickTarget(s.target);
       }
       lastEnd = e.timeStamp;
     },
-    { passive: false },
+    { passive: false, capture: true },
   );
+
+  document.addEventListener('touchcancel', () => {
+    start = null;
+    release();
+  });
 
   for (const type of ['dblclick', 'gesturestart', 'gesturechange', 'gestureend']) {
     document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
