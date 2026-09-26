@@ -134,3 +134,57 @@ test('out of moves shows the fail screen; undo and restart clear it', async ({ p
   await expect(page.locator('.timer small')).toHaveText('0 moves');
   await expect(page.locator('.timer')).toContainText('0:00');
 });
+
+test('moves use one consistent rise → slide → drop path with fixed timing', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.game-card', { hasText: 'Sort' }).click();
+  await expect(page.locator('.ball')).toHaveCount(28);
+  const { stacks } = await savedPuzzle(page);
+
+  const path = (id: number) =>
+    page.evaluate((id) => {
+      const el = document.querySelector<HTMLElement>(`.ball[data-id="${id}"]`)!;
+      const effect = el.getAnimations()[0].effect as KeyframeEffect;
+      const pts = effect.getKeyframes().map((k) => {
+        const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(String(k.transform))!; // ignores scale()
+        return { x: Number(m[1]), y: Number(m[2]) };
+      });
+      return { duration: effect.getTiming().duration, delay: effect.getTiming().delay, pts };
+    }, id);
+
+  const straightSegments = (pts: { x: number; y: number }[]) =>
+    pts.slice(1).every((p, i) => Math.abs(p.x - pts[i].x) < 0.5 || Math.abs(p.y - pts[i].y) < 0.5);
+
+  // Medium: 5 tubes on the top row, 4 below; both empty tubes are on the bottom row.
+  const empty = stacks.findIndex((s) => s.length === 0);
+  const topOf = (t: number) => stacks[t][stacks[t].length - 1];
+
+  // 1) Same row (bottom-row tube 5 → empty): already lifted, so slide + drop only.
+  await tapTube(page, 5);
+  await page.waitForTimeout(300);
+  await tapTube(page, empty);
+  let a = await path(topOf(5));
+  expect(a.duration).toBe(270); // 150 slide + 120 drop
+  expect(a.delay).toBe(0); // no stagger
+  expect(a.pts).toHaveLength(3);
+  expect(straightSegments(a.pts)).toBe(true);
+  expect(a.pts[2].y).toBeGreaterThan(a.pts[1].y); // ends dropping down
+
+  // 2) Undo: not lifted, so it rises first — same shape, fixed timing.
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Undo' }).click();
+  a = await path(topOf(5));
+  expect(a.duration).toBe(360); // 90 rise + 150 slide + 120 drop
+  expect(a.pts).toHaveLength(4);
+  expect(straightSegments(a.pts)).toBe(true);
+
+  // 3) Across rows (top-row tube 0 → bottom-row empty): slides along the top rail,
+  //    then drops straight down — no diagonal.
+  await page.waitForTimeout(400);
+  await tapTube(page, 0);
+  await page.waitForTimeout(300);
+  await tapTube(page, empty);
+  a = await path(topOf(0));
+  expect(a.duration).toBe(270);
+  expect(straightSegments(a.pts)).toBe(true);
+});
