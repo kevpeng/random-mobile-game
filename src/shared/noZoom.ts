@@ -95,4 +95,27 @@ export function preventZoom(): void {
   for (const type of ['dblclick', 'gesturestart', 'gesturechange', 'gestureend']) {
     document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
   }
+
+  snapBackZoom();
+}
+
+/**
+ * Last resort: if the page gets zoomed anyway, re-apply the viewport so iOS
+ * snaps back to 1×. Changing the meta content makes Safari re-evaluate it.
+ */
+function snapBackZoom(): void {
+  const vv = window.visualViewport;
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+  if (!vv || !meta) return;
+  const base = meta.content;
+  let pending = false;
+  vv.addEventListener('resize', () => {
+    if (vv.scale <= 1.01 || pending) return;
+    pending = true;
+    meta.content = base.replace('maximum-scale=1', 'maximum-scale=1.0');
+    requestAnimationFrame(() => {
+      meta.content = base;
+      pending = false;
+    });
+  });
 }

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { haptic } from '../../shared/haptics';
 import { sound } from '../../shared/sound';
-import { isComplete, topRun } from '../game';
+import { isComplete, moveCount, topRun } from '../game';
 import { colorStacks, hintMove, puzzle, selected, stacks, tapStack, won } from '../store';
 
 interface Layout {
@@ -47,7 +47,21 @@ function computeLayout(n: number, cap: number, W: number, H: number): Layout {
 type Pos = { x: number; y: number; stack: number; k: number; up: boolean };
 
 /** Motion timings (ms) — fixed, so every move feels the same. */
-const MOTION = { lift: 120, rise: 90, slide: 150, drop: 120 };
+const MOTION = { lift: 120, rise: 90, slide: 150, drop: 120, glide: 110 };
+/** Finger travel (px) before a press on a tube becomes a drag. */
+const DRAG_SLOP = 8;
+
+interface DragState {
+  pointerId: number;
+  src: number;
+  ids: number[]; // the lifted run, top first
+  startX: number;
+  startY: number;
+  grabX: number; // finger offset from the top ball's corner
+  grabY: number;
+  active: boolean;
+  at: Map<number, { x: number; y: number }>; // current dragged positions
+}
 const FLIGHT_SCALE = 1.06;
 const EASE = {
   out: 'cubic-bezier(.2,.8,.3,1)',
@@ -55,12 +69,39 @@ const EASE = {
   drop: 'cubic-bezier(.4,0,.6,1)',
 };
 
+/** Runs a move animation with the ball drawn above resting balls until it lands. */
+function fly(el: HTMLElement, frames: Keyframe[], duration: number): void {
+  el.style.zIndex = '2';
+  const anim = el.animate(frames, { duration, easing: 'linear' });
+  const settle = () => {
+    if (!el.getAnimations().length) el.style.zIndex = '';
+  };
+  anim.onfinish = settle;
+  anim.oncancel = settle;
+}
+
 export function Tubes() {
   const wrap = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const pieceEls = useRef(new Map<number, HTMLElement>());
   const lastPos = useRef(new Map<number, Pos>());
   const lastPuzzle = useRef<unknown>(null);
+  const board = useRef<HTMLDivElement>(null);
+  const drag = useRef<DragState | null>(null);
+  /** Set when the next layout change comes from releasing a drag. */
+  const fromDrag = useRef(false);
+  const [hover, setHover] = useState<number | null>(null);
+  const impl = useRef({ move: (_: PointerEvent) => {}, end: (_: PointerEvent) => {} });
+  const listeners = useRef({
+    move: (e: PointerEvent) => impl.current.move(e),
+    end: (e: PointerEvent) => impl.current.end(e),
+  }).current;
+  const removeListeners = () => {
+    window.removeEventListener('pointermove', listeners.move);
+    window.removeEventListener('pointerup', listeners.end);
+    window.removeEventListener('pointercancel', listeners.end);
+  };
+  useLayoutEffect(() => removeListeners, []);
 
   useLayoutEffect(() => {
     const el = wrap.current!;
@@ -104,6 +145,8 @@ export function Tubes() {
     const fresh = lastPuzzle.current !== p;
     lastPuzzle.current = p;
     const tr = (x: number, y: number) => `translate(${x}px, ${y}px)`;
+    const released = fromDrag.current;
+    fromDrag.current = false;
     for (const [id, to] of pos) {
       const el = pieceEls.current.get(id);
       const from = lastPos.current.get(id);
@@ -113,6 +156,23 @@ export function Tubes() {
       const start = running.length ? getComputedStyle(el).transform : tr(from.x, from.y);
       running.forEach((a) => a.cancel());
       const end = tr(to.x, to.y);
+      el.style.transform = end; // the drag may have set it directly
+
+      if (released) {
+        // From wherever the finger let go: glide to just above the tube, drop in.
+        const above = `${tr(to.x, railY(to.stack, to.k))} scale(${FLIGHT_SCALE})`;
+        const total = MOTION.glide + MOTION.drop;
+        fly(
+          el,
+          [
+            { transform: start, easing: EASE.inOut, offset: 0 },
+            { transform: above, easing: EASE.drop, offset: MOTION.glide / total },
+            { transform: end, offset: 1 },
+          ],
+          total,
+        );
+        continue;
+      }
 
       if (from.stack === to.stack) {
         // Lift or set down in place.
@@ -139,13 +199,7 @@ export function Tubes() {
       }
       frames.push({ transform: railTo, easing: EASE.drop, offset: (rise + MOTION.slide) / total });
       frames.push({ transform: end, offset: 1 });
-      el.style.zIndex = '2'; // fly above resting balls
-      const anim = el.animate(frames, { duration: total, easing: 'linear' });
-      const settle = () => {
-        if (!el.getAnimations().length) el.style.zIndex = '';
-      };
-      anim.onfinish = settle;
-      anim.oncancel = settle;
+      fly(el, frames, total);
     }
   });
 
@@ -180,19 +234,137 @@ export function Tubes() {
         sound.conflict();
         break;
     }
-    if (r === 'blocked') {
-      const el = wrap.current?.querySelector<HTMLElement>(`[data-tube="${i}"]`);
-      el?.animate(
-        [{ transform: 'translateX(0)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(5px)' }, { transform: 'translateX(0)' }],
-        { duration: 220, easing: 'ease-out' },
-      );
+    if (r === 'blocked') shake(i);
+  };
+
+  const shake = (i: number) => {
+    const el = wrap.current?.querySelector<HTMLElement>(`[data-tube="${i}"]`);
+    el?.animate(
+      [{ transform: 'translateX(0)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(5px)' }, { transform: 'translateX(0)' }],
+      { duration: 220, easing: 'ease-out' },
+    );
+  };
+
+  // --- drag and drop ------------------------------------------------------------
+  // A press behaves exactly like a tap (it lifts the run, or drops a lifted run
+  // onto this tube). If the finger then moves, the lifted run follows it, and
+  // letting go over a tube drops it there.
+
+  /** Tube under a point in board coordinates, with forgiving edges. */
+  const tubeAt = (x: number, y: number): number => {
+    if (!L) return -1;
+    const pad = 6;
+    let best = -1;
+    let bestDist = Infinity;
+    L.tubes.forEach((t, s) => {
+      const top = t.y - L.head;
+      if (y < top - pad || y > t.y + L.tubeH + pad) return;
+      const cx = t.x + L.tubeW / 2;
+      const dist = Math.abs(x - cx);
+      if (dist <= L.tubeW / 2 + 8 && dist < bestDist) {
+        best = s;
+        bestDist = dist;
+      }
+    });
+    return best;
+  };
+
+  const local = (e: PointerEvent) => {
+    const r = board.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+
+  const onPress = (e: PointerEvent, s: number) => {
+    e.preventDefault();
+    if (drag.current) return;
+    onTap(s);
+    // Only a press that leaves this tube lifted can turn into a drag.
+    if (selected.value !== s || !L) return;
+    const ids = stacks.value[s].slice(-topRun(colorStacks.value[s])).reverse();
+    const pt = local(e);
+    drag.current = {
+      pointerId: e.pointerId,
+      src: s,
+      ids,
+      startX: pt.x,
+      startY: pt.y,
+      // Keep the lifted run exactly where it is relative to the finger: no jump.
+      grabX: pt.x - xOf(s),
+      grabY: pt.y - railY(s, 0),
+      active: false,
+      at: new Map(),
+    };
+    window.addEventListener('pointermove', listeners.move);
+    window.addEventListener('pointerup', listeners.end);
+    window.addEventListener('pointercancel', listeners.end);
+  };
+
+  const onDragMove = (e: PointerEvent) => {
+    const d = drag.current;
+    if (!d || e.pointerId !== d.pointerId || !L) return;
+    const pt = local(e);
+    if (!d.active) {
+      if (Math.hypot(pt.x - d.startX, pt.y - d.startY) < DRAG_SLOP) return;
+      d.active = true;
+    }
+    d.ids.forEach((id, k) => {
+      const el = pieceEls.current.get(id);
+      if (!el) return;
+      el.getAnimations().forEach((a) => a.cancel());
+      const x = pt.x - d.grabX;
+      const y = pt.y - d.grabY + k * L.step;
+      d.at.set(id, { x, y });
+      el.style.zIndex = '3';
+      el.style.transform = `translate(${x}px, ${y}px) scale(${FLIGHT_SCALE})`;
+    });
+    const t = tubeAt(pt.x, pt.y);
+    const target = t >= 0 && t !== d.src && moveCount(colorStacks.value, d.src, t, cap) > 0 ? t : null;
+    setHover(target);
+  };
+
+  // Window listeners must be the same functions on add and remove, but the
+  // handlers close over this render's layout, so route through a ref.
+  impl.current = { move: onDragMove, end: (e: PointerEvent) => onDragEnd(e) };
+
+  const onDragEnd = (e: PointerEvent) => {
+    const d = drag.current;
+    if (!d || e.pointerId !== d.pointerId) return;
+    drag.current = null;
+    removeListeners();
+    setHover(null);
+    if (!d.active) return; // it was a tap; already handled on press
+
+    // Animate from where the balls are now.
+    for (const [id, at] of d.at) {
+      const prev = lastPos.current.get(id);
+      if (prev) lastPos.current.set(id, { ...prev, ...at });
+      const el = pieceEls.current.get(id);
+      if (el) el.style.zIndex = '';
+    }
+    fromDrag.current = true;
+    const pt = local(e);
+    const t = e.type === 'pointerup' ? tubeAt(pt.x, pt.y) : -1;
+    if (t >= 0 && t !== d.src && moveCount(colorStacks.value, d.src, t, cap) > 0) {
+      onTap(t); // same move (and feedback) as tapping the target
+    } else {
+      selected.value = null; // back into the source tube
+      if (t >= 0 && t !== d.src) {
+        haptic.conflict();
+        shake(t);
+      } else {
+        haptic.tap();
+      }
     }
   };
 
   return (
     <div class="tubes-wrap" ref={wrap}>
       {L && p && (
-        <div class={`tubes${won.value ? ' tubes--won' : ''}`} style={{ width: L.width, height: L.height }}>
+        <div
+          ref={board}
+          class={`tubes${won.value ? ' tubes--won' : ''}`}
+          style={{ width: L.width, height: L.height }}
+        >
           {st.map((_, s) => {
             const t = L.tubes[s];
             const done = isComplete(cs[s], cap);
@@ -201,7 +373,7 @@ export function Tubes() {
               <div
                 key={s}
                 data-tube={s}
-                class={`tube${done ? ' tube--done' : ''}${sel === s ? ' tube--sel' : ''}${hinted ? ' tube--hint' : ''}`}
+                class={`tube${done ? ' tube--done' : ''}${sel === s ? ' tube--sel' : ''}${hinted ? ' tube--hint' : ''}${hover === s ? ' tube--target' : ''}`}
                 style={{
                   left: t.x,
                   top: t.y - L.head,
@@ -210,10 +382,7 @@ export function Tubes() {
                   '--head': `${L.head}px`,
                   '--done': done ? `var(--c${cs[s][0]})` : 'transparent',
                 }}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  onTap(s);
-                }}
+                onPointerDown={(e) => onPress(e, s)}
               >
                 <div class="tube__body" />
               </div>

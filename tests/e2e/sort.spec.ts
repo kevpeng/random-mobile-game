@@ -188,3 +188,68 @@ test('moves use one consistent rise → slide → drop path with fixed timing', 
   expect(a.duration).toBe(270);
   expect(straightSegments(a.pts)).toBe(true);
 });
+
+test('drag and drop: valid drop moves, invalid or empty-space drop returns', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.game-card', { hasText: 'Sort' }).click();
+  await expect(page.locator('.ball')).toHaveCount(28);
+  const { puzzle, stacks } = await savedPuzzle(page);
+  const cs = colorsOf(puzzle, stacks);
+  const center = async (i: number, fy = 0.7) => {
+    const b = (await page.locator(`[data-tube="${i}"]`).boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height * fy };
+  };
+  const dragTo = async (from: number, to: { x: number; y: number }) => {
+    const a = await center(from);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 12 });
+  };
+  const moves = page.locator('.timer small');
+
+  // 1) Invalid target: a full tube whose top colour differs → shakes, returns home.
+  const src = 0;
+  const bad = cs.findIndex((s, i) => i !== src && s.length === 4 && s[3] !== cs[src][3]);
+  await dragTo(src, await center(bad));
+  await expect(page.locator('.tube--target')).toHaveCount(0); // not highlighted
+  await page.mouse.up();
+  await expect(page.locator('.tube--sel')).toHaveCount(0);
+  await expect(moves).toHaveText('0 moves');
+
+  // 2) Released over empty space → returns home, no move.
+  await page.waitForTimeout(300);
+  const box = (await page.locator('.tubes-wrap').boundingBox())!;
+  await dragTo(src, { x: box.x + 4, y: box.y + 4 });
+  await page.mouse.up();
+  await expect(page.locator('.tube--sel')).toHaveCount(0);
+  await expect(moves).toHaveText('0 moves');
+
+  // 3) Valid target (an empty tube) is highlighted while hovering, and the drop moves the run.
+  await page.waitForTimeout(300);
+  const empty = cs.findIndex((s) => s.length === 0);
+  const topId = stacks[src][stacks[src].length - 1];
+  await dragTo(src, await center(empty));
+  await expect(page.locator(`[data-tube="${empty}"].tube--target`)).toHaveCount(1);
+  await page.screenshot({ path: 'test-results/sort-08-dragging.png' });
+  await page.mouse.up();
+  await expect(moves).toHaveText('1 move');
+  await expect(page.locator('.tube--target')).toHaveCount(0);
+  const saved = await savedPuzzle(page);
+  expect(saved.stacks[empty]).toContain(topId);
+
+  // The ball lands exactly in its slot once the animation ends.
+  await page.waitForTimeout(400);
+  const landed = await page.evaluate((id) => {
+    const el = document.querySelector<HTMLElement>(`.ball[data-id="${id}"]`)!;
+    return { anims: el.getAnimations().length, z: el.style.zIndex, t: el.style.transform };
+  }, topId);
+  expect(landed.anims).toBe(0);
+  expect(landed.z).toBe('');
+  expect(landed.t).not.toContain('scale');
+
+  // 4) Tap-tap still works alongside dragging (into the other empty tube).
+  const empty2 = cs.findIndex((s, i) => s.length === 0 && i !== empty);
+  await tapTube(page, empty);
+  await tapTube(page, empty2);
+  await expect(moves).toHaveText('2 moves');
+});
