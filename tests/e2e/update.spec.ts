@@ -23,11 +23,11 @@ test('a newer live build triggers one cache reset + reload, never a loop', async
 
 test('force refresh clears caches and reloads', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('.game-card')).toHaveCount(2);
+  await expect(page.locator('.game-card')).toHaveCount(3);
   let loads = 0;
   page.on('load', () => loads++);
   await page.getByRole('button', { name: 'Force refresh' }).click();
   await expect.poll(() => loads).toBe(1);
   // Reloaded from the network (the fresh service worker re-caches it) and still works.
-  await expect(page.locator('.game-card')).toHaveCount(2);
+  await expect(page.locator('.game-card')).toHaveCount(3);
 });

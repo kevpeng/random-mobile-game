@@ -82,7 +82,7 @@ test('sort menu presets and back to home', async ({ page }) => {
   await page.waitForTimeout(300);
   await page.screenshot({ path: 'test-results/sort-05-expert.png' });
   await page.getByRole('button', { name: 'Back' }).click();
-  await expect(page.locator('.game-card')).toHaveCount(2);
+  await expect(page.locator('.game-card')).toHaveCount(3);
 });
 
 test('sort dark mode', async ({ page }) => {
