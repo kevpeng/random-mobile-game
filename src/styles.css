@@ -61,6 +61,8 @@
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  /* No double-tap zoom anywhere; the board and tubes override with none. */
+  touch-action: manipulation;
 }
 
 html,
