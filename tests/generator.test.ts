@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { generatePuzzle } from '../src/game/generator';
-import { isSolved } from '../src/game/rules';
-import { countSolutions } from '../src/game/solver';
-import { EMPTY, QUEEN } from '../src/game/types';
+import { generatePuzzle } from '../src/queens/game/generator';
+import { isSolved } from '../src/queens/game/rules';
+import { countSolutions } from '../src/queens/game/solver';
+import { EMPTY, QUEEN } from '../src/queens/game/types';
 
 function regionsConnected(n: number, regions: number[]): boolean {
   for (let g = 0; g < n; g++) {

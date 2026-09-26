@@ -1,4 +1,4 @@
-import { settings } from '../state/store';
+import { shared } from './settings';
 
 /**
  * iOS Safari has no navigator.vibrate, but toggling a native
@@ -26,7 +26,7 @@ function iosSwitch(): HTMLLabelElement {
 const canVibrate = typeof navigator !== 'undefined' && 'vibrate' in navigator;
 
 function pulse(count: number, gap = 70): void {
-  if (!settings.value.haptics) return;
+  if (!shared.value.haptics) return;
   if (canVibrate) {
     const pattern: number[] = [];
     for (let i = 0; i < count; i++) pattern.push(12, gap);

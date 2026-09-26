@@ -1,4 +1,4 @@
-import { mulberry32, shuffle } from './rng';
+import { mulberry32, shuffle } from '../../shared/rng';
 import { solve } from './solver';
 import type { Puzzle } from './types';
 

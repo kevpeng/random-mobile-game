@@ -1,26 +1,9 @@
-import { bests, newGame, puzzle, settings, type Settings } from '../state/store';
-import { formatTime } from './format';
-import { haptic } from './haptics';
+import { bests, newGame, puzzle, settings } from '../state/store';
+import { formatTime } from '../../shared/format';
+import { haptic } from '../../shared/haptics';
+import { FeedbackToggles, Toggle } from '../../shared/Toggles';
 
 const SIZES = [5, 6, 7, 8, 9, 10];
-
-function Toggle(props: { k: 'autoX' | 'haptics' | 'sound'; label: string; hint: string }) {
-  const on = settings.value[props.k];
-  return (
-    <label class="toggle">
-      <span>
-        {props.label}
-        <small>{props.hint}</small>
-      </span>
-      <input
-        type="checkbox"
-        {...{ switch: true }}
-        checked={on}
-        onChange={() => (settings.value = { ...settings.value, [props.k]: !on } as Settings)}
-      />
-    </label>
-  );
-}
 
 export function Menu(props: { onClose: () => void }) {
   const current = puzzle.value?.size;
@@ -46,9 +29,13 @@ export function Menu(props: { onClose: () => void }) {
           ))}
         </div>
         <h2>Settings</h2>
-        <Toggle k="autoX" label="Auto-✕" hint="Dim cells a queen rules out" />
-        <Toggle k="haptics" label="Haptics" hint="Taps you can feel" />
-        <Toggle k="sound" label="Sound" hint="Soft clicks" />
+        <Toggle
+          label="Auto-✕"
+          hint="Dim cells a queen rules out"
+          on={settings.value.autoX}
+          onToggle={() => (settings.value = { ...settings.value, autoX: !settings.value.autoX })}
+        />
+        <FeedbackToggles />
         <h2>How to play</h2>
         <p class="rules">
           Place one crown in every row, column and colour region. Crowns can't touch each other — not even

@@ -10,9 +10,9 @@ import {
   setCell,
   won,
 } from '../state/store';
-import { haptic } from './haptics';
-import { Crown, Cross } from './icons';
-import { sound } from './sound';
+import { haptic } from '../../shared/haptics';
+import { Crown, Cross } from '../../shared/icons';
+import { sound } from '../../shared/sound';
 
 type Mode = 'paint' | 'erase' | 'pending';
 

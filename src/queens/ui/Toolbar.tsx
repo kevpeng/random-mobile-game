@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { clearBoard, hint, history, marks, newGame, undo, won } from '../state/store';
-import { haptic } from './haptics';
-import { ClearIcon, HintIcon, NewIcon, UndoIcon } from './icons';
+import { haptic } from '../../shared/haptics';
+import { ClearIcon, HintIcon, NewIcon, UndoIcon } from '../../shared/icons';
 
 function ToolButton(props: { label: string; onPress: () => void; disabled?: boolean; children: ComponentChildren }) {
   return (

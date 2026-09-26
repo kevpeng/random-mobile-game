@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { blocked, conflicts, isSolved } from '../src/game/rules';
-import { EMPTY, QUEEN, type Puzzle } from '../src/game/types';
+import { blocked, conflicts, isSolved } from '../src/queens/game/rules';
+import { EMPTY, QUEEN, type Puzzle } from '../src/queens/game/types';
 
 // Hand-made 5x5 layout; rule checks don't need it to be a real puzzle.
 const puzzle: Puzzle = {

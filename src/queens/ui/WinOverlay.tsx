@@ -1,7 +1,7 @@
 import { bests, elapsedMs, hintsUsed, newBest, newGame, puzzle } from '../state/store';
-import { Confetti } from './Confetti';
-import { formatTime } from './format';
-import { haptic } from './haptics';
+import { Confetti } from '../../shared/Confetti';
+import { formatTime } from '../../shared/format';
+import { haptic } from '../../shared/haptics';
 
 export function WinOverlay() {
   const p = puzzle.value!;

@@ -1,13 +1,12 @@
 import { batch, computed, effect, signal } from '@preact/signals';
 import { blocked, conflicts, isSolved } from '../game/rules';
 import { EMPTY, QUEEN, type Puzzle } from '../game/types';
+import { load, save } from '../../shared/storage';
 import { prefetch, takePuzzle } from './puzzles';
 
 export interface Settings {
   size: number;
   autoX: boolean;
-  haptics: boolean;
-  sound: boolean;
 }
 
 const SETTINGS_KEY = 'queens:settings:v1';
@@ -16,25 +15,8 @@ const BESTS_KEY = 'queens:bests:v1';
 export const HINT_PENALTY_MS = 10_000;
 const HISTORY_CAP = 300;
 
-function load<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function save(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage unavailable: play on without persistence */
-  }
-}
-
 export const settings = signal<Settings>(
-  load(SETTINGS_KEY, { size: 8, autoX: true, haptics: true, sound: false }),
+  load(SETTINGS_KEY, { size: 8, autoX: true }),
 );
 export const bests = signal<Record<number, number>>(load(BESTS_KEY, {}));
 
@@ -181,7 +163,12 @@ export async function newGame(size = settings.value.size): Promise<void> {
   startPuzzle(await takePuzzle(size));
 }
 
+let restored = false;
+
+/** Loads the saved game (or starts one) the first time Queens is opened. */
 export function restoreOrStart(): void {
+  if (restored) return;
+  restored = true;
   const saved = load<{
     puzzle: Puzzle | null;
     marks: number[];
