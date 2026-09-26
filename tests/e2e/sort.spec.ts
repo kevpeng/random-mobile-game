@@ -82,3 +82,44 @@ test('sort dark mode', async ({ page }) => {
   await expect(page.locator('.ball').first()).toBeVisible();
   await page.screenshot({ path: 'test-results/sort-06-dark.png' });
 });
+
+test('out of moves shows the fail screen; undo and restart clear it', async ({ page }) => {
+  // Colours per tube: [0] [1] [2,2] [0,3] [1,3], height 2 — no useful move left.
+  const colors = [0, 1, 2, 2, 0, 3, 1, 3];
+  const stuck = [[0], [1], [2, 3], [4, 5], [6, 7]];
+  const initial = [[0, 1], [2, 3], [4, 5], [6, 7], []];
+  await page.goto('/');
+  await page.evaluate(
+    (game) => {
+      localStorage.setItem('sort:game:v1', JSON.stringify(game));
+      localStorage.setItem('puzzles:route:v1', JSON.stringify({ route: 'sort' }));
+    },
+    {
+      puzzle: { config: { colors: 4, height: 2, empty: 1 }, colors, stacks: initial, seed: 1 },
+      stacks: stuck,
+      history: [initial],
+      moves: 5,
+      won: false,
+    },
+  );
+  await page.reload();
+  const fail = page.getByRole('dialog', { name: 'Out of moves' });
+  await expect(fail).toBeVisible();
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: 'test-results/sort-07-stuck.png' });
+
+  await fail.getByRole('button', { name: 'Undo' }).click();
+  await expect(fail).toHaveCount(0);
+
+  // Back into the stuck position via storage, then Restart.
+  await page.evaluate((s) => {
+    const g = JSON.parse(localStorage.getItem('sort:game:v1')!);
+    localStorage.setItem('sort:game:v1', JSON.stringify({ ...g, stacks: s, history: [] }));
+  }, stuck);
+  await page.reload();
+  await expect(fail).toBeVisible();
+  await expect(fail.getByRole('button', { name: 'Undo' })).toHaveCount(0);
+  await fail.getByRole('button', { name: 'Restart' }).click();
+  await expect(fail).toHaveCount(0);
+  await expect(page.locator('.timer')).toHaveText('0');
+});

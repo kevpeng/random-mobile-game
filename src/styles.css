@@ -394,6 +394,35 @@ button {
   background: var(--accent);
   color: var(--accent-fg);
 }
+.btn--ghost {
+  background: var(--bg);
+}
+
+/* Appears quickly (no win-animation delay) with a small shake. */
+.win.fail {
+  animation: slide-up 0.35s var(--spring) both;
+}
+.fail .win__card {
+  animation: shake 0.4s ease-out 0.3s;
+}
+.fail__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fail__actions .btn {
+  padding: 12px 20px;
+}
+@keyframes shake {
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
 
 /* ---- menu sheet ---- */
 .sheet-backdrop {

@@ -14,6 +14,7 @@ import {
   moves,
   newBest,
   newGame,
+  outOfMoves,
   puzzle,
   restart,
   restoreOrStart,
@@ -45,6 +46,37 @@ function SortWin() {
   );
 }
 
+function OutOfMoves() {
+  const canUndo = history.value.length > 0;
+  return (
+    <div class="win fail" role="dialog" aria-label="Out of moves">
+      <div class="win__card">
+        <div class="win__stats">
+          <div class="win__title">No moves left</div>
+          <div class="win__time">Stuck</div>
+          <div class="win__meta">
+            {moves.value} move{moves.value === 1 ? '' : 's'}
+          </div>
+        </div>
+        <div class="fail__actions">
+          {canUndo && (
+            <button class="btn btn--primary" onPointerDown={() => haptic.tap()} onClick={undo}>
+              Undo
+            </button>
+          )}
+          <button
+            class={`btn ${canUndo ? 'btn--ghost' : 'btn--primary'}`}
+            onPointerDown={() => haptic.tap()}
+            onClick={restart}
+          >
+            Restart
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SortGame() {
   restoreOrStart();
   const menu = useSignal(false);
@@ -61,7 +93,7 @@ export function SortGame() {
       </header>
       <main class="stage stage--sort">
         <Tubes />
-        {hintMove.value === 'stuck' && <div class="toast">No way out from here — undo or restart</div>}
+        {hintMove.value === 'stuck' && !outOfMoves.value && <div class="toast">No way out from here — undo or restart</div>}
       </main>
       <nav class="toolbar">
         <ToolButton label="Undo" onPress={undo} disabled={isWon || !history.value.length}>
@@ -78,6 +110,7 @@ export function SortGame() {
         </ToolButton>
       </nav>
       {isWon && <SortWin />}
+      {outOfMoves.value && <OutOfMoves />}
       {menu.value && <SortMenu onClose={() => (menu.value = false)} />}
     </div>
   );

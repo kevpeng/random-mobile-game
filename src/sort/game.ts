@@ -46,6 +46,24 @@ export function applyMove<T>(stacks: T[][], from: number, to: number, count: num
 }
 
 /**
+ * Whether any legal move would change the position meaningfully. Moving a
+ * finished tube, or pouring a single-colour stack into an empty tube, doesn't count.
+ */
+export function hasUsefulMove(stacks: Stacks, cap: number): boolean {
+  for (let from = 0; from < stacks.length; from++) {
+    const src = stacks[from];
+    if (!src.length || isComplete(src, cap)) continue;
+    const uniform = topRun(src) === src.length;
+    for (let to = 0; to < stacks.length; to++) {
+      if (!moveCount(stacks, from, to, cap)) continue;
+      if (uniform && stacks[to].length === 0) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Depth-first search with a visited set, trying promising moves first.
  * Returns a move list, or null if unsolvable (or the node budget ran out).
  */
