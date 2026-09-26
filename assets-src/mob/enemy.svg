@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="128" viewBox="0 0 512 128">
+  <!--
+    Enemy runner, seen from the FRONT (enemies run toward the camera).
+    Sheet: 4 frames of 128×128, left to right = run cycle.
+    Feet rest on y = 118 (anchor 64,118). Body (bean) is 62 px wide = one unit diameter.
+    Each frame: outline pass (parts stroked in ink), fill pass, then details.
+  -->
+  <defs>
+    <radialGradient id="skin" cx="0.34" cy="0.28" r="0.85">
+      <stop offset="0" stop-color="#ffb3b3"/>
+      <stop offset="0.42" stop-color="#ff4d5e"/>
+      <stop offset="1" stop-color="#c42238"/>
+    </radialGradient>
+    <linearGradient id="limb" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff4d5e"/>
+      <stop offset="1" stop-color="#c42238"/>
+    </linearGradient>
+
+    <path id="bean" fill="url(#skin)" d="M64 26 C84 26 95 46 95 68 C95 94 82 105 64 105 C46 105 33 94 33 68 C33 46 44 26 64 26 Z"/>
+    <rect id="leg" fill="url(#limb)" x="-7.5" y="0" width="15" height="26" rx="7.5"/>
+    <rect id="legUp" fill="url(#limb)" x="-7.5" y="0" width="15" height="19" rx="7.5"/>
+    <ellipse id="arm" fill="url(#limb)" cx="0" cy="0" rx="9" ry="12"/>
+    <!-- front view: angry brows, two dot eyes with glints, small frown -->
+    <g id="details">
+      <path d="M44 50 L59 56 M84 50 L69 56" fill="none" stroke="#3e0b16" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="54" cy="64" r="6.5" fill="#2a0710"/>
+      <circle cx="74" cy="64" r="6.5" fill="#2a0710"/>
+      <circle cx="52" cy="62" r="2.2" fill="#fff"/>
+      <circle cx="72" cy="62" r="2.2" fill="#fff"/>
+      <path d="M57 83 Q64 78 71 83" fill="none" stroke="#3e0b16" stroke-width="4" stroke-linecap="round"/>
+      <ellipse cx="50" cy="44" rx="11" ry="7" fill="#fff" opacity="0.6" transform="rotate(-35 50 44)"/>
+    </g>
+
+    <!-- poses: legs + arms + body, shared by outline and fill passes -->
+    <g id="p0">
+      <use href="#legUp" transform="translate(52 91) rotate(18)"/>
+      <use href="#leg" x="74" y="92"/>
+      <g transform="rotate(-4 64 106) translate(0 1) translate(64 106) scale(1.03 0.97) translate(-64 -106)">
+        <use href="#arm" transform="translate(30 64) rotate(28)"/>
+        <use href="#arm" transform="translate(98 80) rotate(-8)"/>
+        <use href="#bean"/>
+      </g>
+    </g>
+    <g id="p1">
+      <use href="#leg" x="56" y="92"/>
+      <use href="#leg" x="72" y="92"/>
+      <g transform="translate(0 -4) translate(64 106) scale(0.97 1.03) translate(-64 -106)">
+        <use href="#arm" transform="translate(30 74) rotate(12)"/>
+        <use href="#arm" transform="translate(98 74) rotate(-12)"/>
+        <use href="#bean"/>
+      </g>
+    </g>
+    <g id="p2">
+      <use href="#leg" x="54" y="92"/>
+      <use href="#legUp" transform="translate(76 91) rotate(-18)"/>
+      <g transform="rotate(4 64 106) translate(0 1) translate(64 106) scale(1.03 0.97) translate(-64 -106)">
+        <use href="#arm" transform="translate(30 80) rotate(8)"/>
+        <use href="#arm" transform="translate(98 64) rotate(-28)"/>
+        <use href="#bean"/>
+      </g>
+    </g>
+    <g id="p3">
+      <use href="#leg" x="56" y="92"/>
+      <use href="#leg" x="72" y="92"/>
+      <g transform="translate(0 -3) translate(64 106) scale(0.98 1.02) translate(-64 -106)">
+        <use href="#arm" transform="translate(30 72) rotate(16)"/>
+        <use href="#arm" transform="translate(98 72) rotate(-16)"/>
+        <use href="#bean"/>
+      </g>
+    </g>
+  </defs>
+
+  <g id="frame0">
+    <use href="#p0" stroke="#3e0b16" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#p0"/>
+    <g transform="rotate(-4 64 106) translate(0 1) translate(64 106) scale(1.03 0.97) translate(-64 -106)"><use href="#details"/></g>
+  </g>
+  <g id="frame1" transform="translate(128 0)">
+    <use href="#p1" stroke="#3e0b16" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#p1"/>
+    <g transform="translate(0 -4) translate(64 106) scale(0.97 1.03) translate(-64 -106)"><use href="#details"/></g>
+  </g>
+  <g id="frame2" transform="translate(256 0)">
+    <use href="#p2" stroke="#3e0b16" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#p2"/>
+    <g transform="rotate(4 64 106) translate(0 1) translate(64 106) scale(1.03 0.97) translate(-64 -106)"><use href="#details"/></g>
+  </g>
+  <g id="frame3" transform="translate(384 0)">
+    <use href="#p3" stroke="#3e0b16" stroke-width="12" stroke-linejoin="round"/>
+    <use href="#p3"/>
+    <g transform="translate(0 -3) translate(64 106) scale(0.98 1.02) translate(-64 -106)"><use href="#details"/></g>
+  </g>
+</svg>

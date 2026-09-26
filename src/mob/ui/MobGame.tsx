@@ -10,6 +10,7 @@ import { canUpgrade, lossCoins, UPGRADES, upgradeCost, winCoins } from '../sim/e
 import { endlessSpec, levelSpec } from '../sim/levels';
 import { BASE_HP, CANNON_Z, STEP, World } from '../sim/world';
 import { addCoins, buy, levelUp, progress, recordEndless } from '../store';
+import { Coin, UpgradeIcon } from './art';
 
 type Screen = 'menu' | 'playing' | 'won' | 'lost' | 'over' | 'shop';
 type Mode = 'level' | 'endless';
@@ -196,6 +197,8 @@ export function MobGame() {
     if (location.search.includes('mobtest')) {
       (window as unknown as Record<string, unknown>).__mob = {
         world: () => world.current,
+        /** True once the sprite atlas and textures have loaded. */
+        artReady: () => renderer.artReady,
         /** On-screen x (CSS px) of a sim lane position at the cannon's depth. */
         screenX: (simX: number) => renderer.toScreen(simX, 0, CANNON_Z)?.x ?? NaN,
         run: (seconds: number) => {
@@ -281,7 +284,9 @@ export function MobGame() {
       <header class="top mob__top">
         <BackButton />
         <div class="chip mob__chip">{mode.value === 'endless' && s !== 'menu' ? 'Endless' : `Level ${p.level}`}</div>
-        <div class="mob__coins">🪙 {p.coins}</div>
+        <div class="mob__coins" aria-label={`${p.coins} coins`}>
+          <Coin /> {p.coins}
+        </div>
       </header>
 
       {s === 'playing' && (
@@ -325,7 +330,9 @@ export function MobGame() {
           <Confetti />
           <div class="mob__panel" role="dialog" aria-label="Level cleared">
             <h2>Tower down!</h2>
-            <p class="mob__reward">+{result.value.coins} 🪙</p>
+            <p class="mob__reward">
+              +{result.value.coins} <Coin size={24} />
+            </p>
             <button class="btn btn--primary" onClick={() => start('level')}>
               Next: level {p.level}
             </button>
@@ -340,7 +347,9 @@ export function MobGame() {
         <div class="mob__panel" role="dialog" aria-label="Base overrun">
           <h2>Base overrun</h2>
           <p>Upgrades help — try more fire rate or a head start.</p>
-          {result.value.coins > 0 && <p class="mob__reward">+{result.value.coins} 🪙</p>}
+          {result.value.coins > 0 && <p class="mob__reward">
+              +{result.value.coins} <Coin size={24} />
+            </p>}
           <button class="btn btn--primary" onClick={() => start('level')}>
             Try again
           </button>
@@ -355,7 +364,7 @@ export function MobGame() {
           <h2>{result.value.best ? 'New best!' : 'Overrun'}</h2>
           <p class="mob__score">{result.value.score} defeated</p>
           <p>
-            Best {p.endlessBest} · +{result.value.coins} 🪙
+            Best {p.endlessBest} · +{result.value.coins} <Coin size={18} />
           </p>
           <button class="btn btn--primary" onClick={() => start('endless')}>
             Play again
@@ -369,13 +378,16 @@ export function MobGame() {
       {s === 'shop' && (
         <div class="mob__panel mob__shop" role="dialog" aria-label="Upgrades">
           <h2>Upgrades</h2>
-          <p class="mob__reward">🪙 {p.coins}</p>
+          <p class="mob__reward">
+            <Coin size={24} /> {p.coins}
+          </p>
           {UPGRADES.map((u) => {
             const lvl = p.upgrades[u.key];
             const maxed = !canUpgrade(p.upgrades, u.key);
             const cost = upgradeCost(u.key, lvl);
             return (
               <div class="mob__upgrade" key={u.key}>
+                <UpgradeIcon upgrade={u.key} />
                 <span>
                   {u.name} <small>Lv {lvl}</small>
                   <small>{u.blurb}</small>
@@ -386,7 +398,13 @@ export function MobGame() {
                   onPointerDown={() => haptic.tap()}
                   onClick={() => buy(u.key) && sound.queen()}
                 >
-                  {maxed ? 'Max' : `🪙 ${cost}`}
+                  {maxed ? (
+                    'Max'
+                  ) : (
+                    <>
+                      <Coin size={18} /> {cost}
+                    </>
+                  )}
                 </button>
               </div>
             );

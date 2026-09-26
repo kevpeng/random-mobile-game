@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Upgrade: head start. A candy-cyan ×2 gate right at the start line. -->
+  <defs>
+    <radialGradient id="knob" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#e6fdff"/>
+      <stop offset="0.5" stop-color="#2ed3ee"/>
+      <stop offset="1" stop-color="#0e8fb0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8ef0ff"/>
+      <stop offset="1" stop-color="#2ed3ee"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#0a3b52" stroke-width="4" stroke-linejoin="round">
+    <rect x="9" y="16" width="46" height="38" rx="4" fill="url(#glass)"/>
+    <rect x="5" y="12" width="9" height="46" rx="4.5" fill="#1ab6d8"/>
+    <rect x="50" y="12" width="9" height="46" rx="4.5" fill="#1ab6d8"/>
+    <circle cx="9.5" cy="10" r="6" fill="url(#knob)"/>
+    <circle cx="54.5" cy="10" r="6" fill="url(#knob)"/>
+  </g>
+  <g fill="#fff" opacity="0.8">
+    <rect x="7" y="22" width="5" height="3" rx="1.5"/><rect x="7" y="34" width="5" height="3" rx="1.5"/><rect x="7" y="46" width="5" height="3" rx="1.5"/>
+    <rect x="52" y="22" width="5" height="3" rx="1.5"/><rect x="52" y="34" width="5" height="3" rx="1.5"/><rect x="52" y="46" width="5" height="3" rx="1.5"/>
+  </g>
+  <text x="32" y="44" text-anchor="middle" font-family="-apple-system, system-ui, 'Segoe UI', sans-serif" font-weight="900" font-size="22"
+        fill="#fff" stroke="#0a3b52" stroke-width="4" paint-order="stroke" stroke-linejoin="round">×2</text>
+</svg>

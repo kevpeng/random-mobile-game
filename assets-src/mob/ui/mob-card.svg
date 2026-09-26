@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="168" height="168" viewBox="0 0 168 168">
+  <!--
+    Home-screen card art for Mob (shown at 84×84 CSS px): the lane in perspective, the red castle
+    at the far end, a cyan ×2 gate and a pink −5 gate, a blue crowd pouring out of the cannon,
+    and a couple of red runners coming the other way.
+  -->
+  <defs>
+    <clipPath id="card"><rect width="168" height="168" rx="24"/></clipPath>
+    <radialGradient id="blue" cx="0.34" cy="0.28" r="0.85">
+      <stop offset="0" stop-color="#9fd6ff"/><stop offset="0.42" stop-color="#3d8bff"/><stop offset="1" stop-color="#1c4fc4"/>
+    </radialGradient>
+    <radialGradient id="red" cx="0.34" cy="0.28" r="0.85">
+      <stop offset="0" stop-color="#ffb3b3"/><stop offset="0.42" stop-color="#ff4d5e"/><stop offset="1" stop-color="#c42238"/>
+    </radialGradient>
+    <linearGradient id="lane" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#efe3cb"/><stop offset="1" stop-color="#f8f0e0"/>
+    </linearGradient>
+    <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8a8a"/><stop offset="0.4" stop-color="#f0525f"/><stop offset="1" stop-color="#c7303f"/>
+    </linearGradient>
+    <!-- a runner: 20 px wide bean on stubby legs, feet at y = 0 -->
+    <g id="bguy">
+      <rect x="-6" y="-9" width="5" height="9" rx="2.5" fill="#1c4fc4"/>
+      <rect x="1" y="-9" width="5" height="9" rx="2.5" fill="#1c4fc4"/>
+      <path d="M0 -27 C7 -27 10 -20 10 -14 C10 -7 6 -4 0 -4 C-6 -4 -10 -7 -10 -14 C-10 -20 -7 -27 0 -27 Z" fill="url(#blue)"/>
+    </g>
+    <g id="rguy">
+      <rect x="-6" y="-9" width="5" height="9" rx="2.5" fill="#c42238"/>
+      <rect x="1" y="-9" width="5" height="9" rx="2.5" fill="#c42238"/>
+      <path d="M0 -27 C7 -27 10 -20 10 -14 C10 -7 6 -4 0 -4 C-6 -4 -10 -7 -10 -14 C-10 -20 -7 -27 0 -27 Z" fill="url(#red)"/>
+    </g>
+    <g id="b"><use href="#bguy" stroke="#10224a" stroke-width="5" stroke-linejoin="round"/><use href="#bguy"/>
+      <ellipse cx="-4" cy="-21" rx="3" ry="2" fill="#fff" opacity="0.6"/></g>
+    <g id="r"><use href="#rguy" stroke="#3e0b16" stroke-width="5" stroke-linejoin="round"/><use href="#rguy"/>
+      <circle cx="-3.5" cy="-16" r="1.8" fill="#2a0710"/><circle cx="3.5" cy="-16" r="1.8" fill="#2a0710"/></g>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="168" height="168" fill="#8fd16a"/>
+    <g fill="#5fae3f" opacity="0.6"><path d="M14 40 l3 8 l3 -8 M150 70 l3 8 l3 -8 M18 120 l3 8 l3 -8 M146 140 l3 8 l3 -8" stroke="#5fae3f" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <!-- lane in perspective -->
+    <path d="M52 0 L116 0 L150 168 L18 168 Z" fill="url(#lane)"/>
+    <path d="M52 0 L18 168 M116 0 L150 168" stroke="#d9c49b" stroke-width="5"/>
+    <g fill="#e2d1b0"><path d="M45 34 L123 34 L124 39 L44 39 Z"/><path d="M37 76 L131 76 L132 81 L36 81 Z"/><path d="M27 124 L141 124 L142 130 L26 130 Z"/></g>
+
+    <!-- castle -->
+    <g stroke="#3e0b16" stroke-width="4" stroke-linejoin="round">
+      <path d="M58 30 V10 L64 -2 L70 10 V30 Z" fill="#b01d38"/>
+      <path d="M98 30 V10 L104 -2 L110 10 V30 Z" fill="#b01d38"/>
+      <path d="M66 32 V6 h8 v5 h6 v-5 h8 v5 h6 v-5 h8 V32 Z" fill="url(#wall)"/>
+    </g>
+    <path d="M78 32 V24 A6 6 0 0 1 90 24 V32 Z" fill="#4a1020"/>
+
+    <!-- gates: cyan ×2 (left), pink −5 (right) -->
+    <g stroke-linejoin="round">
+      <rect x="32" y="56" width="50" height="26" rx="3" fill="#2ed3ee" fill-opacity="0.55" stroke="#0a7fa0" stroke-width="3"/>
+      <rect x="86" y="56" width="50" height="26" rx="3" fill="#ff4f86" fill-opacity="0.5" stroke="#b01d4e" stroke-width="3"/>
+      <g fill="#fff" stroke="#10224a" stroke-width="2.5">
+        <circle cx="32" cy="56" r="4" fill="#bff6ff"/><circle cx="82" cy="56" r="4" fill="#bff6ff"/>
+      </g>
+      <g fill="#ffd0de" stroke="#3e0b16" stroke-width="2.5">
+        <circle cx="86" cy="56" r="4"/><circle cx="136" cy="56" r="4"/>
+      </g>
+    </g>
+    <g font-family="-apple-system, system-ui, 'Segoe UI', sans-serif" font-weight="900" font-size="19" text-anchor="middle"
+       fill="#fff" stroke-width="4" paint-order="stroke" stroke-linejoin="round">
+      <text x="57" y="76" stroke="#0a5a78">×2</text>
+      <text x="111" y="76" stroke="#8a1030">−5</text>
+    </g>
+
+    <!-- enemies coming down -->
+    <use href="#r" transform="translate(98 52) scale(0.7)"/>
+    <use href="#r" transform="translate(72 50) scale(0.7)"/>
+
+    <!-- the crowd -->
+    <use href="#b" transform="translate(66 100) scale(0.8)"/><use href="#b" transform="translate(86 97) scale(0.8)"/><use href="#b" transform="translate(104 102) scale(0.8)"/>
+    <use href="#b" transform="translate(54 122) scale(0.9)"/><use href="#b" transform="translate(76 118) scale(0.9)"/><use href="#b" transform="translate(96 123) scale(0.9)"/><use href="#b" transform="translate(116 119) scale(0.9)"/>
+    <use href="#b" x="62" y="144"/><use href="#b" x="106" y="146"/>
+
+    <!-- cannon peeking in at the bottom -->
+    <g stroke="#10224a" stroke-width="4" stroke-linejoin="round">
+      <ellipse cx="62" cy="166" rx="7" ry="12" fill="#ffc93c"/>
+      <ellipse cx="106" cy="166" rx="7" ry="12" fill="#ffc93c"/>
+      <path d="M72 150 L96 150 L100 172 L68 172 Z" fill="url(#blue)"/>
+      <circle cx="84" cy="172" r="17" fill="url(#blue)"/>
+      <ellipse cx="84" cy="149" rx="13" ry="6" fill="#0c1840"/>
+    </g>
+  </g>
+</svg>

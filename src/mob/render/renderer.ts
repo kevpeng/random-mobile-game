@@ -1,5 +1,6 @@
 import { isGood } from '../sim/levels';
 import { radius, type World } from '../sim/world';
+import atlas from './atlas.json';
 import { lookAt, multiply, perspective, project, type Mat4 } from './math';
 
 /** Sim lane x ∈ [-1, 1] is drawn this many world units wide on each side. */
@@ -7,7 +8,19 @@ export const LANE = 1.9;
 /** Gate panel height (world units). */
 export const GATE_H = 1.0;
 const MAX_INSTANCES = 9000;
-const FLOATS = 8; // x, y, z, size, r, g, b, a
+const FLOATS = 8; // ball instances: x, y, z, size, r, g, b, a
+const SPRITE_FLOATS = 6; // sprite instances: x, y, z, size, frame, flash
+const TEX_FLOATS = 9; // textured mesh vertices: x, y, z, u, v, r, g, b, a
+
+/** Characters are drawn this much wider than their collision diameter (reads better on a phone). */
+const UNIT_VIS = 1.45;
+/** Champions and brutes are already big; they get less of a boost. */
+const BIG_VIS = 1.1;
+/** World width of the cannon's footprint and of the castle's walls. */
+const CANNON_W = 0.95;
+const TOWER_W = 2.0;
+const CANNON_ANCHOR_Z = 0.02;
+const RECOIL_MS = 70;
 
 const MESH_VS = `#version 300 es
 in vec3 a_pos; in vec4 a_color;
@@ -28,6 +41,28 @@ out vec4 o;
 void main() {
   float f = smoothstep(u_fogRange.x, u_fogRange.y, v_dist);
   o = vec4(mix(v_color.rgb, u_fog, f * 0.55), v_color.a);
+}`;
+
+// Textured mesh (lane, grass, gate glass): texture × vertex colour, same fog as the mesh.
+const TEX_VS = `#version 300 es
+in vec3 a_pos; in vec2 a_uv; in vec4 a_color;
+uniform mat4 u_vp;
+out vec2 v_uv; out vec4 v_color; out float v_dist;
+void main() {
+  v_uv = a_uv; v_color = a_color;
+  gl_Position = u_vp * vec4(a_pos, 1.0);
+  v_dist = gl_Position.w;
+}`;
+
+const TEX_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv; in vec4 v_color; in float v_dist;
+uniform sampler2D u_tex; uniform vec3 u_fog; uniform vec2 u_fogRange;
+out vec4 o;
+void main() {
+  vec4 t = texture(u_tex, v_uv) * v_color;
+  float f = smoothstep(u_fogRange.x, u_fogRange.y, v_dist);
+  o = vec4(mix(t.rgb, u_fog, f * 0.55), t.a);
 }`;
 
 // Camera-facing billboards. u_shape: 0 = shaded ball, 1 = ground shadow, 2 = soft particle.
@@ -63,6 +98,43 @@ void main() {
   o = vec4(v_color.rgb * diff * (1.0 - rim) + spec, 1.0);
 }`;
 
+// Atlas sprites: camera-facing quads anchored at the feet. Frame rects and sizes come from
+// uniform tables, so an instance is just position, size, frame index and a hit flash.
+// The whole quad gets the depth of its anchor (nudged toward the camera), so crowds sort by
+// where they stand and an upright sprite never cuts into the ground or the gate posts.
+const FRAME_COUNT = Object.keys(atlas.frames).length;
+const SPRITE_VS = `#version 300 es
+in vec2 a_corner; in vec4 a_inst; in vec2 a_meta;
+uniform mat4 u_view; uniform mat4 u_proj;
+uniform vec4 u_uv[${FRAME_COUNT}]; uniform vec4 u_geo[${FRAME_COUNT}];
+out vec2 v_uv; out float v_flash; out float v_dist;
+void main() {
+  int f = int(a_meta.x + 0.5);
+  vec4 g = u_geo[f];
+  vec4 r = u_uv[f];
+  vec4 vp = u_view * vec4(a_inst.xyz, 1.0);
+  vec4 anchor = u_proj * vec4(vp.xy, vp.z + 0.05, 1.0);
+  vp.xy += vec2((a_corner.x - g.z) * g.x, (g.w - a_corner.y) * g.y) * a_inst.w;
+  gl_Position = u_proj * vp;
+  gl_Position.z = anchor.z / anchor.w * gl_Position.w;
+  v_uv = mix(r.xy, r.zw, a_corner);
+  v_flash = a_meta.y;
+  v_dist = gl_Position.w;
+}`;
+
+const SPRITE_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv; in float v_flash; in float v_dist;
+uniform sampler2D u_tex; uniform float u_cut; uniform vec3 u_fog; uniform vec2 u_fogRange;
+out vec4 o;
+void main() {
+  vec4 t = texture(u_tex, v_uv); // premultiplied
+  if (t.a < u_cut) discard;
+  vec3 c = mix(t.rgb / t.a, vec3(1.0), v_flash);
+  float f = smoothstep(u_fogRange.x, u_fogRange.y, v_dist) * 0.3;
+  o = vec4(mix(c, u_fog, f), t.a);
+}`;
+
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const p = gl.createProgram()!;
   for (const [type, src] of [
@@ -82,6 +154,9 @@ function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgr
 
 type RGB = [number, number, number];
 const hex = (h: string): RGB => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as RGB;
+const mix = (a: RGB, b: RGB, t: number): RGB => [0, 1, 2].map((i) => a[i] + (b[i] - a[i]) * t) as RGB;
+const WHITE: RGB = [1, 1, 1];
+const GREY: RGB = [0.72, 0.72, 0.74];
 
 interface Palette {
   sky: RGB;
@@ -94,27 +169,37 @@ interface Palette {
   enemy: RGB;
   brute: RGB;
   good: RGB;
+  goodDeep: RGB;
   bad: RGB;
+  badDeep: RGB;
   tower: RGB;
   towerSide: RGB;
   cannon: RGB;
+  /** Multipliers for the (light) lane and grass textures. */
+  laneTint: RGB;
+  grassTint: RGB;
 }
 
+// Colours follow docs/mob-art.md.
 const LIGHT: Palette = {
   sky: hex('#f6f3ee'),
   grass: hex('#cfe3b8'),
   lane: hex('#eee7da'),
   laneAlt: hex('#e6ddcc'),
-  edge: hex('#b9ad98'),
-  player: hex('#3b82f6'),
-  champion: hex('#1e40af'),
-  enemy: hex('#ef4444'),
-  brute: hex('#991b1b'),
-  good: hex('#22c3ee'),
-  bad: hex('#f43f5e'),
+  edge: hex('#d9c49b'),
+  player: hex('#3d8bff'),
+  champion: hex('#2459e0'),
+  enemy: hex('#ff4d5e'),
+  brute: hex('#b01d38'),
+  good: hex('#2ed3ee'),
+  goodDeep: hex('#14a4c8'),
+  bad: hex('#ff4f86'),
+  badDeep: hex('#e0306a'),
   tower: hex('#b91c1c'),
   towerSide: hex('#7f1d1d'),
   cannon: hex('#1e40af'),
+  laneTint: [1, 1, 1],
+  grassTint: [1, 1, 1],
 };
 const DARK: Palette = {
   ...LIGHT,
@@ -122,8 +207,11 @@ const DARK: Palette = {
   grass: hex('#1f2a1c'),
   lane: hex('#2a2a30'),
   laneAlt: hex('#25252b'),
-  edge: hex('#45454d'),
+  edge: hex('#4a4652'),
   cannon: hex('#3b82f6'),
+  // Light textures × these ≈ the dark lane (#2a2a30) and dark grass (#1f2a1c).
+  laneTint: [0.19, 0.19, 0.235],
+  grassTint: [0.24, 0.22, 0.28],
 };
 
 const FOV = 44;
@@ -142,20 +230,66 @@ const DEPTH = 0.55;
 // prettier-ignore
 const VIEW_FIX = new Float32Array([-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, DEPTH, 0, 0, 0, 0, 1]);
 
+// ---- atlas tables (src/mob/render/atlas.json, generated by `npm run assets:mob`) ----------
+type FrameName = keyof typeof atlas.frames;
+const FRAME_NAMES = Object.keys(atlas.frames) as FrameName[];
+const frameIndex = (name: FrameName) => FRAME_NAMES.indexOf(name);
+const FRAME_UV = new Float32Array(FRAME_NAMES.flatMap((n) => atlas.frames[n].uv));
+// Per frame: quad size in multiples of the instance size (frame px / reference px), then the anchor.
+const FRAME_GEO = new Float32Array(
+  FRAME_NAMES.flatMap((n) => {
+    const f = atlas.frames[n];
+    return [f.w / f.unit, f.h / f.unit, f.anchor[0], f.anchor[1]];
+  }),
+);
+const SHEET = {
+  player: frameIndex('player_0'),
+  champion: frameIndex('champion_0'),
+  enemy: frameIndex('enemy_0'),
+  brute: frameIndex('brute_0'),
+  cannon: frameIndex('cannon_0'),
+  tower: frameIndex('tower_0'),
+};
+/** Height of the castle's roof tips above its anchor, in multiples of TOWER_W. */
+const TOWER_TOP = (atlas.frames.tower_0.anchor[1] * atlas.frames.tower_0.h - 4) / atlas.frames.tower_0.unit;
+const asset = (path: string) => import.meta.env.BASE_URL + path;
+
+interface Art {
+  atlas: WebGLTexture;
+  lane: WebGLTexture;
+  grass: WebGLTexture;
+  gate: WebGLTexture;
+}
+
 export class Renderer {
   readonly gl: WebGL2RenderingContext;
   private mesh: WebGLProgram;
   private ball: WebGLProgram;
+  private sprite: WebGLProgram;
+  private texProg: WebGLProgram;
   private meshBuf: WebGLBuffer;
   private meshVao: WebGLVertexArrayObject;
+  private texBuf: WebGLBuffer;
+  private texVao: WebGLVertexArrayObject;
   private ballVao: WebGLVertexArrayObject;
+  private spriteVao: WebGLVertexArrayObject;
   private instBuf: WebGLBuffer;
+  private spriteBuf: WebGLBuffer;
   private inst = new Float32Array(MAX_INSTANCES * FLOATS);
+  private spriteInst = new Float32Array(MAX_INSTANCES * SPRITE_FLOATS);
   private verts: number[] = [];
+  private tverts: number[] = [];
+  /** Textures, once loaded. Until then (or if loading fails) the plain ball/box look is drawn. */
+  private art: Art | null = null;
+  private alphaToCoverage: boolean;
+  private lastShots = -1;
+  private recoilUntil = 0;
   pal: Palette = LIGHT;
   vp: Mat4 = new Float32Array(16);
   width = 1;
   height = 1;
+  /** Screen point just above the castle (for its health bar); updated every frame. */
+  towerTop: { x: number; y: number; scale: number } | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, premultipliedAlpha: true });
@@ -163,6 +297,10 @@ export class Renderer {
     this.gl = gl;
     this.mesh = compile(gl, MESH_VS, MESH_FS);
     this.ball = compile(gl, BALL_VS, BALL_FS);
+    this.sprite = compile(gl, SPRITE_VS, SPRITE_FS);
+    this.texProg = compile(gl, TEX_VS, TEX_FS);
+    // With MSAA, alpha-to-coverage gives the alpha-tested sprites soft edges at no sorting cost.
+    this.alphaToCoverage = (gl.getParameter(gl.SAMPLES) as number) > 1;
 
     // Mesh: interleaved pos(3) + color(4), rebuilt each frame (a few hundred vertices).
     this.meshVao = gl.createVertexArray()!;
@@ -174,6 +312,21 @@ export class Renderer {
     gl.vertexAttribPointer(mp, 3, gl.FLOAT, false, 28, 0);
     gl.enableVertexAttribArray(mc);
     gl.vertexAttribPointer(mc, 4, gl.FLOAT, false, 28, 12);
+
+    // Textured mesh: pos(3) + uv(2) + color(4).
+    this.texVao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.texVao);
+    this.texBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texBuf);
+    const tp = gl.getAttribLocation(this.texProg, 'a_pos'),
+      tu = gl.getAttribLocation(this.texProg, 'a_uv'),
+      tc = gl.getAttribLocation(this.texProg, 'a_color');
+    gl.enableVertexAttribArray(tp);
+    gl.vertexAttribPointer(tp, 3, gl.FLOAT, false, TEX_FLOATS * 4, 0);
+    gl.enableVertexAttribArray(tu);
+    gl.vertexAttribPointer(tu, 2, gl.FLOAT, false, TEX_FLOATS * 4, 12);
+    gl.enableVertexAttribArray(tc);
+    gl.vertexAttribPointer(tc, 4, gl.FLOAT, false, TEX_FLOATS * 4, 20);
 
     // Billboards: a unit quad, instanced.
     this.ballVao = gl.createVertexArray()!;
@@ -194,7 +347,80 @@ export class Renderer {
     gl.enableVertexAttribArray(bcol);
     gl.vertexAttribPointer(bcol, 4, gl.FLOAT, false, FLOATS * 4, 16);
     gl.vertexAttribDivisor(bcol, 1);
+
+    // Sprites: a 0..1 quad (y down, like the atlas), instanced.
+    this.spriteVao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.spriteVao);
+    const squad = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, squad);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]), gl.STATIC_DRAW);
+    const sc = gl.getAttribLocation(this.sprite, 'a_corner');
+    gl.enableVertexAttribArray(sc);
+    gl.vertexAttribPointer(sc, 2, gl.FLOAT, false, 0, 0);
+    this.spriteBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.spriteBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, this.spriteInst.byteLength, gl.DYNAMIC_DRAW);
+    const si = gl.getAttribLocation(this.sprite, 'a_inst'), sm = gl.getAttribLocation(this.sprite, 'a_meta');
+    gl.enableVertexAttribArray(si);
+    gl.vertexAttribPointer(si, 4, gl.FLOAT, false, SPRITE_FLOATS * 4, 0);
+    gl.vertexAttribDivisor(si, 1);
+    gl.enableVertexAttribArray(sm);
+    gl.vertexAttribPointer(sm, 2, gl.FLOAT, false, SPRITE_FLOATS * 4, 16);
+    gl.vertexAttribDivisor(sm, 1);
     gl.bindVertexArray(null);
+
+    gl.useProgram(this.sprite);
+    gl.uniform4fv(gl.getUniformLocation(this.sprite, 'u_uv'), FRAME_UV);
+    gl.uniform4fv(gl.getUniformLocation(this.sprite, 'u_geo'), FRAME_GEO);
+    gl.uniform1f(gl.getUniformLocation(this.sprite, 'u_cut'), this.alphaToCoverage ? 0.08 : 0.5);
+
+    void this.loadArt();
+  }
+
+  /** True once the sprite atlas and textures are on the GPU. */
+  get artReady(): boolean {
+    return this.art !== null;
+  }
+
+  private async loadArt(): Promise<void> {
+    const load = (path: string) =>
+      new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`failed to load ${path}`));
+        img.src = asset(path);
+      });
+    try {
+      const t = atlas.textures;
+      const [a, l, g, gt] = await Promise.all([load(atlas.image), load(t.lane.image), load(t.grass.image), load(t.gate.image)]);
+      if (this.gl.isContextLost()) return;
+      this.art = {
+        atlas: this.texture(a, true, false),
+        lane: this.texture(l, false, true),
+        grass: this.texture(g, false, true),
+        gate: this.texture(gt, false, true),
+      };
+    } catch {
+      // Keep the fallback look; the game is fully playable without textures.
+    }
+  }
+
+  private texture(img: HTMLImageElement, premultiply: boolean, repeat: boolean): WebGLTexture {
+    const gl = this.gl;
+    const t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premultiply);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    const wrap = repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+    const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+    if (aniso && repeat) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 4);
+    return t;
   }
 
   setDark(dark: boolean): void {
@@ -252,46 +478,103 @@ export class Renderer {
     for (const p of [a, b, c, a, c, d]) this.verts.push(p[0], p[1], p[2], col[0], col[1], col[2], alpha);
   }
 
-  private box(x: number, z: number, w: number, h: number, dpt: number, top: RGB, side: RGB, front: RGB): void {
+  /** Textured quad; each corner is [x, y, z, u, v]. */
+  private tquad(a: number[], b: number[], c: number[], d: number[], col: RGB, alpha = 1): void {
+    for (const p of [a, b, c, a, c, d]) this.tverts.push(p[0], p[1], p[2], p[3], p[4], col[0], col[1], col[2], alpha);
+  }
+
+  private box(x: number, z: number, w: number, h: number, dpt: number, top: RGB, side: RGB, front: RGB, y0 = 0): void {
     const x0 = x - w / 2, x1 = x + w / 2, z0 = z - dpt / 2, z1 = z + dpt / 2;
     this.quad([x0, h, z0], [x1, h, z0], [x1, h, z1], [x0, h, z1], top);
-    this.quad([x0, 0, z0], [x1, 0, z0], [x1, h, z0], [x0, h, z0], front);
-    this.quad([x0, 0, z0], [x0, 0, z1], [x0, h, z1], [x0, h, z0], side);
-    this.quad([x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0], side);
+    this.quad([x0, y0, z0], [x1, y0, z0], [x1, h, z0], [x0, h, z0], front);
+    this.quad([x0, y0, z0], [x0, y0, z1], [x0, h, z1], [x0, h, z0], side);
+    this.quad([x1, y0, z0], [x1, y0, z1], [x1, h, z1], [x1, h, z0], side);
+  }
+
+  /** Candy gate frame: striped posts and a glossy top bar (opaque mesh). */
+  private gateFrame(x0: number, x1: number, z: number, col: RGB, deep: RGB, dim: boolean): void {
+    const c = dim ? mix(col, GREY, 0.55) : col;
+    const d = dim ? mix(deep, GREY, 0.55) : deep;
+    const light = mix(c, WHITE, 0.45);
+    // The camera looks down steeply, so the tops of the bar and posts carry most of the look.
+    const h = GATE_H, pw = 0.15, bar = 0.12, bd = 0.2;
+    // top bar: bright top face with a glossy stripe, deeper front
+    this.box((x0 + x1) / 2, z, x1 - x0, h + 0.02, bd, c, d, d, h - bar);
+    const yt = h + 0.021, zt = z - bd / 2;
+    this.quad([x0, yt, zt + 0.04], [x1, yt, zt + 0.04], [x1, yt, zt + 0.09], [x0, yt, zt + 0.09], light);
+    // posts with candy stripes
+    for (const px of [x0, x1]) {
+      this.box(px, z, pw, h + 0.04, bd, light, d, d);
+      for (let y = 0.08; y < h - bar; y += 0.2) {
+        this.quad([px - pw / 2, y, zt - 0.001], [px + pw / 2, y, zt - 0.001], [px + pw / 2, y + 0.08, zt - 0.001], [px - pw / 2, y + 0.08, zt - 0.001], WHITE);
+      }
+    }
   }
 
   render(w: World, fx: { shake: number; particles: { x: number; z: number; y: number; s: number; c: RGB; a: number }[] }): void {
-    const { gl, pal } = this;
+    const { gl, pal, art } = this;
     const { view, proj } = this.camera(w, fx.shake);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(pal.sky[0], pal.sky[1], pal.sky[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+    // Cannon recoil: the sim counts shots, so a change means it just fired.
+    const now = performance.now();
+    if (w.shots !== this.lastShots) {
+      if (w.shots > this.lastShots && this.lastShots >= 0) this.recoilUntil = now + RECOIL_MS;
+      this.lastShots = w.shots;
+    }
+
     // ---- static-ish meshes: ground, lane, tower, cannon (opaque) ----
     this.verts.length = 0;
+    this.tverts.length = 0;
     const L = w.length;
     const zFar = L + 3;
-    this.quad([-8, -0.01, -4], [8, -0.01, -4], [8, -0.01, zFar + 8], [-8, -0.01, zFar + 8], pal.grass);
-    for (let z = -2, k = 0; z < zFar; z += 1, k++) {
-      this.quad([-LANE, 0, z], [LANE, 0, z], [LANE, 0, z + 1], [-LANE, 0, z + 1], k % 2 ? pal.laneAlt : pal.lane);
+    if (art) {
+      // Grass: tiles come out roughly square on screen despite the depth squash.
+      const gs = 2.4, gz = gs / DEPTH, X0 = -8, X1 = 8, Z0 = -4, Z1 = zFar + 8;
+      // (v runs against z so the texture's "up" points up the screen)
+      this.tquad([X0, -0.01, Z0, X0 / gs, -Z0 / gz], [X1, -0.01, Z0, X1 / gs, -Z0 / gz], [X1, -0.01, Z1, X1 / gs, -Z1 / gz], [X0, -0.01, Z1, X0 / gs, -Z1 / gz], pal.grassTint);
+      // Lane: u across the lane (curbs at both edges), v repeats every 2 world units (2 bands).
+      this.tquad([-LANE, 0, -2, 0, -1], [LANE, 0, -2, 1, -1], [LANE, 0, zFar, 1, zFar / 2], [-LANE, 0, zFar, 0, zFar / 2], pal.laneTint);
+    } else {
+      this.quad([-8, -0.01, -4], [8, -0.01, -4], [8, -0.01, zFar + 8], [-8, -0.01, zFar + 8], pal.grass);
+      for (let z = -2, k = 0; z < zFar; z += 1, k++) {
+        this.quad([-LANE, 0, z], [LANE, 0, z], [LANE, 0, z + 1], [-LANE, 0, z + 1], k % 2 ? pal.laneAlt : pal.lane);
+      }
     }
     const e = 0.07;
     this.box(-LANE - e / 2, zFar / 2 - 1, e, 0.08, zFar + 2, pal.edge, pal.edge, pal.edge);
     this.box(LANE + e / 2, zFar / 2 - 1, e, 0.08, zFar + 2, pal.edge, pal.edge, pal.edge);
-    if (!w.endless) {
-      const hit = w.towerFlash < 0.08;
-      const shake = w.towerFlash < 0.25 ? Math.sin(w.towerFlash * 90) * 0.04 * (1 - w.towerFlash / 0.25) : 0;
-      const face = hit ? (pal.tower.map((c) => c + (1 - c) * 0.45) as RGB) : pal.tower;
-      this.box(shake, L + 0.2, 1.5, 1.5, 0.9, pal.towerSide, pal.towerSide, face);
-      // Battlements
-      for (let i = -2; i <= 2; i++) this.box(shake + i * 0.3, L - 0.1, 0.18, 1.72, 0.3, pal.towerSide, pal.towerSide, face);
-    }
+    // (the sim stops stepping once the level ends, so a final hit would otherwise flash forever)
+    const hit = w.towerFlash < 0.08 && w.state === 'playing';
+    const towerShake = w.towerFlash < 0.25 ? Math.sin(w.towerFlash * 90) * 0.04 * (1 - w.towerFlash / 0.25) : 0;
     const cx = w.cannonX * LANE;
-    this.box(cx, 0.05, 0.42, 0.22, 0.42, pal.cannon, pal.cannon, pal.cannon);
-    this.box(cx, 0.32, 0.14, 0.16, 0.5, pal.cannon, pal.cannon, pal.cannon);
+    const knobs: { x: number; z: number; c: RGB }[] = [];
+    if (art) {
+      for (const g of w.gates) {
+        if (g.broken) continue;
+        const good = isGood(g.kind);
+        const col = good ? pal.good : pal.bad;
+        const x0 = g.x0 * LANE + 0.03, x1 = g.x1 * LANE - 0.03;
+        this.gateFrame(x0, x1, g.z, col, good ? pal.goodDeep : pal.badDeep, g.cool > 0);
+        const kc = g.cool > 0 ? mix(col, GREY, 0.55) : mix(col, WHITE, 0.2);
+        knobs.push({ x: x0, z: g.z, c: kc }, { x: x1, z: g.z, c: kc });
+      }
+    } else {
+      if (!w.endless) {
+        const face = hit ? (pal.tower.map((c) => c + (1 - c) * 0.45) as RGB) : pal.tower;
+        this.box(towerShake, L + 0.2, 1.5, 1.5, 0.9, pal.towerSide, pal.towerSide, face);
+        // Battlements
+        for (let i = -2; i <= 2; i++) this.box(towerShake + i * 0.3, L - 0.1, 0.18, 1.72, 0.3, pal.towerSide, pal.towerSide, face);
+      }
+      this.box(cx, 0.05, 0.42, 0.22, 0.42, pal.cannon, pal.cannon, pal.cannon);
+      this.box(cx, 0.32, 0.14, 0.16, 0.5, pal.cannon, pal.cannon, pal.cannon);
+    }
     const opaque = this.verts.length;
 
     // ---- gates (translucent, drawn after opaque) ----
+    const groundVerts = this.tverts.length;
     for (const g of w.gates) {
       if (g.broken) continue;
       const col = isGood(g.kind) ? pal.good : pal.bad;
@@ -299,24 +582,47 @@ export class Renderer {
       const dim = g.cool > 0 ? 0.45 : 1;
       const x0 = g.x0 * LANE + 0.03, x1 = g.x1 * LANE - 0.03;
       const h = GATE_H;
-      this.quad([x0, 0, g.z], [x1, 0, g.z], [x1, h, g.z], [x0, h, g.z], col, (0.32 + pulse) * dim);
-      this.quad([x0, h - 0.06, g.z], [x1, h - 0.06, g.z], [x1, h, g.z], [x0, h, g.z], col, 0.9 * dim);
-      this.quad([x0, 0, g.z], [x0 + 0.06, 0, g.z], [x0 + 0.06, h, g.z], [x0, h, g.z], col, 0.9 * dim);
-      this.quad([x1 - 0.06, 0, g.z], [x1, 0, g.z], [x1, h, g.z], [x1 - 0.06, h, g.z], col, 0.9 * dim);
+      if (art) {
+        // Candy glass: the gate texture (white stripes + alpha), tinted; one tile per gate height.
+        const u1 = (x1 - x0) / GATE_H;
+        this.tquad([x0, 0, g.z, 0, 1], [x1, 0, g.z, u1, 1], [x1, h, g.z, u1, 0], [x0, h, g.z, 0, 0], mix(col, WHITE, pulse * 1.5), (0.95 + pulse) * dim);
+      } else {
+        this.quad([x0, 0, g.z], [x1, 0, g.z], [x1, h, g.z], [x0, h, g.z], col, (0.32 + pulse) * dim);
+        this.quad([x0, h - 0.06, g.z], [x1, h - 0.06, g.z], [x1, h, g.z], [x0, h, g.z], col, 0.9 * dim);
+        this.quad([x0, 0, g.z], [x0 + 0.06, 0, g.z], [x0 + 0.06, h, g.z], [x0, h, g.z], col, 0.9 * dim);
+        this.quad([x1 - 0.06, 0, g.z], [x1, 0, g.z], [x1, h, g.z], [x1 - 0.06, h, g.z], col, 0.9 * dim);
+      }
+    }
+
+    const fog0 = this.fit.dist * 0.9, fog1 = this.fit.dist * 2.6;
+    gl.enable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+    if (art) {
+      gl.useProgram(this.texProg);
+      gl.uniformMatrix4fv(gl.getUniformLocation(this.texProg, 'u_vp'), false, this.vp);
+      gl.uniform3fv(gl.getUniformLocation(this.texProg, 'u_fog'), pal.sky);
+      gl.uniform2f(gl.getUniformLocation(this.texProg, 'u_fogRange'), fog0, fog1);
+      gl.uniform1i(gl.getUniformLocation(this.texProg, 'u_tex'), 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindVertexArray(this.texVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.texBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.tverts), gl.STREAM_DRAW);
+      gl.bindTexture(gl.TEXTURE_2D, art.grass);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.bindTexture(gl.TEXTURE_2D, art.lane);
+      gl.drawArrays(gl.TRIANGLES, 6, 6);
     }
 
     gl.useProgram(this.mesh);
     gl.uniformMatrix4fv(gl.getUniformLocation(this.mesh, 'u_vp'), false, this.vp);
     gl.uniform3fv(gl.getUniformLocation(this.mesh, 'u_fog'), pal.sky);
-    gl.uniform2f(gl.getUniformLocation(this.mesh, 'u_fogRange'), this.fit.dist * 0.9, this.fit.dist * 2.6);
+    gl.uniform2f(gl.getUniformLocation(this.mesh, 'u_fogRange'), fog0, fog1);
     gl.bindVertexArray(this.meshVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.verts), gl.STREAM_DRAW);
-    gl.enable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
     gl.drawArrays(gl.TRIANGLES, 0, opaque / 7);
 
-    // ---- units: shadows, then balls, then gates on top, then particles ----
+    // ---- units: shadows, then bodies, then gates on top, then particles ----
     gl.useProgram(this.ball);
     gl.uniformMatrix4fv(gl.getUniformLocation(this.ball, 'u_view'), false, view);
     gl.uniformMatrix4fv(gl.getUniformLocation(this.ball, 'u_proj'), false, proj);
@@ -335,15 +641,21 @@ export class Renderer {
     const units = (flat: boolean) => {
       n = 0;
       const p = w.players, en = w.enemies;
+      const k = art ? 0.8 : 1; // sprite shadows: a little narrower than the body
       for (let i = 0; i < p.n; i++) {
-        const r = radius(p.hp[i]) * LANE * Math.min(1, 0.4 + p.age[i] * 6);
+        const vis = art ? (p.hp[i] > 1 ? BIG_VIS : UNIT_VIS) : 1;
+        const r = radius(p.hp[i]) * LANE * Math.min(1, 0.4 + p.age[i] * 6) * k * vis;
         const bob = flat ? 0 : Math.abs(Math.sin(p.age[i] * 14 + i)) * 0.03;
         put(p.x[i] * LANE, flat ? 0.01 : r + bob, p.z[i], r, p.hp[i] > 1 ? pal.champion : pal.player);
       }
       for (let i = 0; i < en.n; i++) {
-        const r = radius(en.hp[i]) * LANE;
+        const r = radius(en.hp[i]) * LANE * k * (art ? (en.hp[i] > 1 ? BIG_VIS : UNIT_VIS) : 1);
         const bob = flat ? 0 : Math.abs(Math.sin(en.age[i] * 12 + i)) * 0.03;
         put(en.x[i] * LANE, flat ? 0.01 : r + bob, en.z[i], r, en.hp[i] > 1 ? pal.brute : pal.enemy);
+      }
+      if (flat && art) {
+        put(cx, 0.01, CANNON_ANCHOR_Z + 0.1, CANNON_W * 0.6, pal.player);
+        if (!w.endless) put(towerShake, 0.01, L + 0.3, TOWER_W * 0.6, pal.enemy);
       }
       return n;
     };
@@ -359,17 +671,38 @@ export class Renderer {
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     gl.uniform1i(shapeLoc, 0);
-    const balls = units(false);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.inst, 0, balls * FLOATS);
-    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, balls);
+    if (art) {
+      // Gate post knobs: shiny candy balls.
+      n = 0;
+      for (const kn of knobs) put(kn.x, GATE_H + 0.1, kn.z, 0.11, kn.c);
+    } else {
+      units(false);
+    }
+    if (n) {
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.inst, 0, n * FLOATS);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+    }
+
+    this.towerTop = null;
+    if (art) this.drawSprites(w, art.atlas, view, proj, now, towerShake, hit);
+    else if (!w.endless) this.towerTop = this.toScreen(0, 2.05, L);
 
     // Gates: translucent, depth-tested against units but not writing depth.
-    gl.useProgram(this.mesh);
-    gl.bindVertexArray(this.meshVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuf);
     gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
-    gl.drawArrays(gl.TRIANGLES, opaque / 7, (this.verts.length - opaque) / 7);
+    if (art) {
+      gl.useProgram(this.texProg);
+      gl.bindVertexArray(this.texVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.texBuf);
+      gl.bindTexture(gl.TEXTURE_2D, art.gate);
+      gl.drawArrays(gl.TRIANGLES, groundVerts / TEX_FLOATS, (this.tverts.length - groundVerts) / TEX_FLOATS);
+    } else {
+      gl.useProgram(this.mesh);
+      gl.bindVertexArray(this.meshVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuf);
+      gl.drawArrays(gl.TRIANGLES, opaque / 7, (this.verts.length - opaque) / 7);
+    }
 
     // Particles (additive-ish soft discs).
     if (fx.particles.length) {
@@ -385,5 +718,58 @@ export class Renderer {
     }
     gl.depthMask(true);
     gl.bindVertexArray(null);
+  }
+
+  /** Units, cannon and castle from the atlas: one instanced, alpha-tested draw. */
+  private drawSprites(w: World, tex: WebGLTexture, view: Mat4, proj: Mat4, now: number, towerShake: number, hit: boolean): void {
+    const gl = this.gl;
+    const f = this.spriteInst;
+    let n = 0;
+    const put = (x: number, y: number, z: number, size: number, frame: number, flash = 0) => {
+      const o = n++ * SPRITE_FLOATS;
+      f[o] = x; f[o + 1] = y; f[o + 2] = z; f[o + 3] = size; f[o + 4] = frame; f[o + 5] = flash;
+    };
+    const p = w.players, en = w.enemies;
+    for (let i = 0; i < p.n; i++) {
+      const big = p.hp[i] > 1;
+      const size = 2 * radius(p.hp[i]) * LANE * (big ? BIG_VIS : UNIT_VIS) * Math.min(1, 0.4 + p.age[i] * 6);
+      const frame = (big ? SHEET.champion : SHEET.player) + ((Math.floor(p.age[i] * (big ? 8 : 11)) + i) & 3);
+      put(p.x[i] * LANE, 0, p.z[i], size, frame);
+    }
+    for (let i = 0; i < en.n; i++) {
+      const big = en.hp[i] > 1;
+      const size = 2 * radius(en.hp[i]) * LANE * (big ? BIG_VIS : UNIT_VIS);
+      const frame = (big ? SHEET.brute : SHEET.enemy) + ((Math.floor(en.age[i] * (big ? 7 : 9)) + i) & 3);
+      put(en.x[i] * LANE, 0, en.z[i], size, frame);
+    }
+    put(w.cannonX * LANE, 0, CANNON_ANCHOR_Z, CANNON_W, SHEET.cannon + (now < this.recoilUntil ? 1 : 0));
+    if (!w.endless) {
+      const frac = w.towerHp / w.towerMax;
+      const state = frac > 0.66 ? 0 : frac > 0.33 ? 1 : 2;
+      const tz = w.length + 0.2;
+      put(towerShake, 0, tz, TOWER_W, SHEET.tower + state, hit ? 0.45 : 0);
+      // The health bar goes just above the roof tips: the anchor in view space, raised along
+      // the view's up axis (as the sprite is), projected to CSS pixels.
+      const vx = view[8] * tz + view[12], vy = view[9] * tz + view[13] + TOWER_TOP * TOWER_W, vz = view[10] * tz + view[14];
+      const cxp = proj[0] * vx + proj[4] * vy + proj[8] * vz + proj[12];
+      const cyp = proj[1] * vx + proj[5] * vy + proj[9] * vz + proj[13];
+      const cw = proj[3] * vx + proj[7] * vy + proj[11] * vz + proj[15];
+      if (cw > 0) this.towerTop = { x: ((cxp / cw) * 0.5 + 0.5) * this.width, y: (0.5 - (cyp / cw) * 0.5) * this.height - 8, scale: 1 / cw };
+    }
+
+    gl.useProgram(this.sprite);
+    gl.uniformMatrix4fv(gl.getUniformLocation(this.sprite, 'u_view'), false, view);
+    gl.uniformMatrix4fv(gl.getUniformLocation(this.sprite, 'u_proj'), false, proj);
+    gl.uniform3fv(gl.getUniformLocation(this.sprite, 'u_fog'), this.pal.sky);
+    gl.uniform2f(gl.getUniformLocation(this.sprite, 'u_fogRange'), this.fit.dist * 0.9, this.fit.dist * 2.6);
+    gl.uniform1i(gl.getUniformLocation(this.sprite, 'u_tex'), 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.bindVertexArray(this.spriteVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.spriteBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, f, 0, n * SPRITE_FLOATS);
+    if (this.alphaToCoverage) gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+    gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
   }
 }

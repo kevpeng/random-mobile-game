@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="768" height="256" viewBox="0 0 768 256">
+  <!--
+    Enemy castle, front view. Sheet: 3 frames of 256×256: [intact, cracked, crumbling].
+    Anchor = bottom centre of the walls (128, 244). Walls span x 20..236 (216 px = the "unit" width).
+    Candy red walls, cream trim, dark-red cone roofs with gold tips, pink flag.
+  -->
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8a8a"/>
+      <stop offset="0.4" stop-color="#f0525f"/>
+      <stop offset="1" stop-color="#c7303f"/>
+    </linearGradient>
+    <linearGradient id="keep" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff9a96"/>
+      <stop offset="0.35" stop-color="#f45c68"/>
+      <stop offset="1" stop-color="#cf3445"/>
+    </linearGradient>
+    <linearGradient id="roof" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e2425a"/>
+      <stop offset="0.45" stop-color="#b01d38"/>
+      <stop offset="1" stop-color="#7c0f25"/>
+    </linearGradient>
+    <radialGradient id="gold" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#fff6c2"/>
+      <stop offset="0.5" stop-color="#ffc93c"/>
+      <stop offset="1" stop-color="#d98a12"/>
+    </radialGradient>
+    <linearGradient id="cream" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff6e8"/>
+      <stop offset="1" stop-color="#f3d9bd"/>
+    </linearGradient>
+    <linearGradient id="dust" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7ebe0"/>
+      <stop offset="1" stop-color="#cdb8a6"/>
+    </linearGradient>
+
+    <!-- ===== shared pieces ===== -->
+    <path id="turretL" fill="url(#wall)" d="M26 104 L82 104 L82 244 L26 244 Z"/>
+    <path id="turretR" fill="url(#wall)" d="M174 104 L230 104 L230 244 L174 244 Z"/>
+    <path id="roofL" fill="url(#roof)" d="M16 108 Q54 14 54 14 Q54 14 92 108 Q54 118 16 108 Z"/>
+    <path id="roofR" fill="url(#roof)" d="M164 108 Q202 14 202 14 Q202 14 240 108 Q202 118 164 108 Z"/>
+    <circle id="tipL" cx="54" cy="16" r="8" fill="url(#gold)"/>
+    <circle id="tipR" cx="202" cy="16" r="8" fill="url(#gold)"/>
+    <path id="keepBody" fill="url(#keep)" d="M70 76 L186 76 L186 244 L70 244 Z"/>
+    <g id="merlons" fill="url(#cream)">
+      <rect x="66" y="52" width="24" height="28" rx="5"/>
+      <rect x="100" y="52" width="24" height="28" rx="5"/>
+      <rect x="132" y="52" width="24" height="28" rx="5"/>
+      <rect x="166" y="52" width="24" height="28" rx="5"/>
+    </g>
+    <rect id="trim" x="64" y="74" width="128" height="12" rx="5" fill="url(#cream)"/>
+    <path id="door" fill="#4a1020" d="M104 244 L104 204 A24 24 0 0 1 152 204 L152 244 Z"/>
+    <g id="doorBars" stroke="#7a2a3a" stroke-width="4" stroke-linecap="round">
+      <path d="M116 190 V242 M128 184 V242 M140 190 V242 M106 212 H150"/>
+    </g>
+    <g id="windows" fill="#4a1020">
+      <path d="M92 150 V132 A9 9 0 0 1 110 132 V150 Z"/>
+      <path d="M146 150 V132 A9 9 0 0 1 164 132 V150 Z"/>
+      <path d="M46 176 V160 A8 8 0 0 1 62 160 V176 Z"/>
+      <path d="M194 176 V160 A8 8 0 0 1 210 160 V176 Z"/>
+    </g>
+    <g id="bricks" fill="none" stroke="#b92637" stroke-width="3" stroke-linecap="round" opacity="0.55">
+      <path d="M78 104 h14 M98 118 h16 M160 104 h16 M150 170 h16 M84 190 h14 M170 214 h10"/>
+      <path d="M34 132 h14 M60 204 h14 M186 136 h14 M204 206 h14 M40 226 h12"/>
+    </g>
+    <g id="shine" fill="#fff" opacity="0.5">
+      <rect x="76" y="92" width="8" height="40" rx="4"/>
+      <rect x="31" y="116" width="6" height="30" rx="3"/>
+      <rect x="179" y="116" width="6" height="30" rx="3"/>
+      <ellipse cx="38" cy="86" rx="5" ry="12" transform="rotate(22 38 86)"/>
+      <ellipse cx="186" cy="86" rx="5" ry="12" transform="rotate(22 186 86)"/>
+      <circle cx="51" cy="13" r="3"/>
+      <circle cx="199" cy="13" r="3"/>
+    </g>
+    <g id="flag">
+      <path d="M128 60 V10" stroke="#5a3a1a" stroke-width="5" stroke-linecap="round"/>
+      <path d="M130 10 Q150 12 166 20 Q150 26 130 34 Z" fill="#ff5d8f" stroke="#3e0b16" stroke-width="4" stroke-linejoin="round"/>
+    </g>
+    <g id="cracks" fill="none" stroke="#3e0b16" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M150 88 L142 104 L152 116 L144 134"/>
+      <path d="M40 200 L50 212 L44 226"/>
+      <path d="M186 160 L176 170 L182 184"/>
+      <path d="M96 176 L88 190"/>
+    </g>
+    <g id="chips" fill="#ffb3a8">
+      <path d="M200 124 l10 -4 l4 9 l-8 5 z"/>
+      <path d="M112 100 l8 -3 l3 7 l-7 4 z"/>
+      <path d="M58 136 l7 -2 l2 7 l-6 3 z"/>
+    </g>
+  </defs>
+
+  <!-- ===== frame 0: intact ===== -->
+  <g id="intact">
+    <g stroke="#3e0b16" stroke-width="10" stroke-linejoin="round">
+      <use href="#turretL"/><use href="#turretR"/><use href="#roofL"/><use href="#roofR"/>
+      <use href="#tipL"/><use href="#tipR"/><use href="#merlons"/><use href="#keepBody"/><use href="#trim"/>
+    </g>
+    <use href="#flag"/>
+    <use href="#turretL"/><use href="#turretR"/><use href="#roofL"/><use href="#roofR"/>
+    <use href="#tipL"/><use href="#tipR"/><use href="#merlons"/><use href="#keepBody"/><use href="#trim"/>
+    <use href="#bricks"/><use href="#windows"/><use href="#door"/><use href="#doorBars"/><use href="#shine"/>
+  </g>
+
+  <!-- ===== frame 1: cracked (a merlon knocked off, cracks, chipped bricks, torn flag) ===== -->
+  <g id="cracked" transform="translate(256 0)">
+    <g id="merlonsHit" fill="url(#cream)">
+      <rect x="66" y="52" width="24" height="28" rx="5"/>
+      <rect x="100" y="52" width="24" height="28" rx="5"/>
+      <path d="M132 80 V62 L140 56 L148 66 L156 60 V80 Z"/>
+    </g>
+    <g stroke="#3e0b16" stroke-width="10" stroke-linejoin="round">
+      <use href="#turretL"/><use href="#turretR"/><use href="#roofL"/>
+      <g transform="rotate(6 202 108)"><use href="#roofR"/><use href="#tipR"/></g>
+      <use href="#tipL"/><use href="#merlonsHit"/><use href="#keepBody"/><use href="#trim"/>
+    </g>
+    <path d="M128 60 V16" stroke="#5a3a1a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M130 16 Q146 18 158 24 L150 28 L156 34 Q144 36 130 38 Z" fill="#ff5d8f" stroke="#3e0b16" stroke-width="4" stroke-linejoin="round"/>
+    <use href="#turretL"/><use href="#turretR"/><use href="#roofL"/>
+    <g transform="rotate(6 202 108)"><use href="#roofR"/><use href="#tipR"/></g>
+    <use href="#tipL"/><use href="#merlonsHit"/><use href="#keepBody"/><use href="#trim"/>
+    <use href="#bricks"/><use href="#chips"/><use href="#windows"/><use href="#door"/><use href="#doorBars"/>
+    <use href="#shine"/><use href="#cracks"/>
+  </g>
+
+  <!-- ===== frame 2: crumbling (roof gone, broken tops, big cracks, rubble, dust) ===== -->
+  <g id="crumbling" transform="translate(512 0)">
+    <defs>
+      <path id="turretLBroken" fill="url(#wall)" d="M26 244 V122 L36 112 L46 124 L58 108 L70 120 L82 114 V244 Z"/>
+      <path id="keepBroken" fill="url(#keep)" d="M70 244 V96 L84 86 L98 100 L112 82 L126 104 L140 90 L156 108 L170 94 L186 104 V244 Z"/>
+      <g id="rubble" fill="url(#wall)">
+        <path d="M14 244 Q18 226 34 228 Q46 222 54 234 L56 244 Z"/>
+        <path d="M188 244 Q192 222 210 226 Q228 224 240 244 Z"/>
+        <rect x="92" y="226" width="24" height="18" rx="6" transform="rotate(-12 104 235)"/>
+        <rect x="150" y="230" width="18" height="14" rx="5" transform="rotate(14 159 237)"/>
+      </g>
+    </defs>
+    <g fill="url(#dust)" opacity="0.9">
+      <circle cx="104" cy="66" r="18"/><circle cx="130" cy="54" r="22"/><circle cx="158" cy="70" r="16"/>
+      <circle cx="40" cy="96" r="14"/>
+    </g>
+    <g stroke="#3e0b16" stroke-width="10" stroke-linejoin="round">
+      <use href="#turretLBroken"/><use href="#turretR"/>
+      <g transform="rotate(9 202 108) translate(-10 10)"><use href="#roofR"/></g>
+      <use href="#keepBroken"/><use href="#rubble"/>
+    </g>
+    <use href="#turretLBroken"/><use href="#turretR"/>
+    <g transform="rotate(9 202 108) translate(-10 10)"><use href="#roofR"/></g>
+    <use href="#keepBroken"/>
+    <use href="#bricks"/><use href="#chips"/><use href="#windows"/><use href="#door"/><use href="#doorBars"/>
+    <use href="#cracks"/>
+    <g fill="none" stroke="#3e0b16" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M112 84 L118 110 L108 128 L116 150"/>
+      <path d="M58 110 L52 136 L62 150"/>
+      <path d="M170 96 L162 124 L172 140 L164 160"/>
+    </g>
+    <path d="M122 92 V70 L132 64" stroke="#5a3a1a" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <use href="#rubble"/>
+  </g>
+</svg>

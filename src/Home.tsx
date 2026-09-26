@@ -1,3 +1,4 @@
+import { MobCardArt } from './mob/ui/art';
 import { haptic } from './shared/haptics';
 import { route, type Route } from './shared/settings';
 import { checkForUpdate, forceRefresh, liveCommit, updateStatus, type UpdateStatus } from './shared/update';
@@ -30,25 +31,10 @@ function SortArt() {
   );
 }
 
-function MobArt() {
-  return (
-    <div class="art art--mob">
-      <div class="art__lane">
-        <i class="art__tower" />
-        <i class="art__gate art__gate--good">×2</i>
-        <i class="art__gate art__gate--bad">−5</i>
-        {[...Array(9)].map((_, k) => (
-          <b key={k} class="art__unit" style={{ left: `${34 + (k % 3) * 11}%`, bottom: `${14 + Math.floor(k / 3) * 12}%` }} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 const GAMES: { id: Route; name: string; blurb: string; Art: () => preact.JSX.Element }[] = [
   { id: 'queens', name: 'Queens', blurb: 'One crown per row, column and colour.', Art: QueensArt },
   { id: 'sort', name: 'Sort', blurb: 'Stack every colour into its own tube.', Art: SortArt },
-  { id: 'mob', name: 'Mob', blurb: 'Multiply your army and topple the tower.', Art: MobArt },
+  { id: 'mob', name: 'Mob', blurb: 'Multiply your army and topple the tower.', Art: MobCardArt },
 ];
 
 const STATUS_TEXT: Record<UpdateStatus, string> = {
