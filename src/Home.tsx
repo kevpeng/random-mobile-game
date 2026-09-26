@@ -44,6 +44,7 @@ const STATUS_TEXT: Record<UpdateStatus, string> = {
   updating: 'Updating…',
   offline: 'Offline — showing the saved version',
   unknown: "Couldn't read the live version",
+  broken: 'The live site is broken right now — keeping your saved copy',
 };
 
 function UpdateBar() {

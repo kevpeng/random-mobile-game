@@ -39,5 +39,30 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # If Pages is still set to "Deploy from a branch", GitHub also publishes the
+      # raw repository (a blank page) on every push, racing this deploy. Wait for
+      # that build to finish so ours always lands last.
+      - name: Wait for any branch-based Pages build
+        if: github.event_name == 'push' # manual re-runs don't trigger a branch build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          type=$(gh api "repos/$REPO/pages" --jq .build_type 2>/dev/null || echo unknown)
+          echo "Pages build_type: $type"
+          if [ "$type" = "workflow" ]; then exit 0; fi
+          echo "::warning::GitHub Pages is set to 'Deploy from a branch', which publishes the raw source and races this deploy. Switch Settings → Pages → Source to 'GitHub Actions'."
+          if [ "$type" != "legacy" ]; then echo "Can't read Pages settings; waiting 45s instead."; sleep 45; exit 0; fi
+          for i in $(seq 1 36); do
+            read -r commit status < <(gh api "repos/$REPO/pages/builds/latest" --jq '"\(.commit) \(.status)"' 2>/dev/null || echo "none none")
+            echo "latest branch build: commit=$commit status=$status"
+            if [ "$commit" = "$SHA" ] && { [ "$status" = "built" ] || [ "$status" = "errored" ]; }; then
+              sleep 5 # let it finish publishing
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for the branch build; deploying anyway."
       - id: deployment
         uses: actions/deploy-pages@v4

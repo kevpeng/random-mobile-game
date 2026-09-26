@@ -113,6 +113,10 @@ button {
   align-items: center;
   padding: 12px 16px 4px;
   height: 60px;
+  /* On wide screens keep the header with the (centred) game, not in the far corners. */
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
 }
 .top h1 {
   margin: 0;
@@ -174,6 +178,24 @@ button {
 .back svg {
   width: 22px;
   height: 22px;
+}
+.back__label {
+  display: none;
+}
+/* Desktop / tablet: a labelled "‹ Home" pill instead of a bare chevron. */
+@media (min-width: 700px) {
+  .back {
+    width: auto;
+    padding: 0 14px 0 8px;
+    border-radius: 999px;
+    grid-auto-flow: column;
+    gap: 2px;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .back__label {
+    display: inline;
+  }
 }
 
 .timer small {

@@ -11,8 +11,12 @@ import { registerSW } from 'virtual:pwa-register';
  * we update the service worker and reload; if that doesn't take, we clear the
  * app's caches and reload (at most once per build, so it can't loop while the
  * CDN still serves the old files).
+ *
+ * Caches are only ever cleared after checking that the live site is a real
+ * build. If the server is serving something broken (e.g. GitHub Pages
+ * publishing the raw source instead of the build), the saved copy is kept.
  */
-export type UpdateStatus = 'idle' | 'checking' | 'latest' | 'updating' | 'offline' | 'unknown';
+export type UpdateStatus = 'idle' | 'checking' | 'latest' | 'updating' | 'offline' | 'unknown' | 'broken';
 export const updateStatus = signal<UpdateStatus>('idle');
 export const liveCommit = signal<string | null>(null);
 
@@ -49,8 +53,29 @@ async function fetchLiveCommit(): Promise<string | null> {
   return data.commit ?? null;
 }
 
-/** Drops every cache and service worker, then reloads from the network. */
+/**
+ * True if the server is serving a real build: index.html loads a bundled
+ * script from /assets/ (not the raw /src/main.tsx) and version.json exists.
+ */
+export async function liveSiteHealthy(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}index.html?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const html = await res.text();
+    if (!html.includes('/assets/') || html.includes('src/main.tsx')) return false;
+    return (await fetchLiveCommit()) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Drops every cache and service worker, then reloads from the network — but only if the live site is healthy. */
 export async function forceRefresh(): Promise<void> {
+  updateStatus.value = 'checking';
+  if (!(await liveSiteHealthy())) {
+    updateStatus.value = 'broken'; // keep the working saved copy
+    return;
+  }
   updateStatus.value = 'updating';
   try {
     const regs = (await navigator.serviceWorker?.getRegistrations()) ?? [];
