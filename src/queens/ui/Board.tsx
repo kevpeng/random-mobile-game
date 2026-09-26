@@ -8,13 +8,14 @@ import {
   marks,
   puzzle,
   setCell,
+  settings,
   won,
 } from '../state/store';
 import { haptic } from '../../shared/haptics';
 import { Crown, Cross } from '../../shared/icons';
 import { sound } from '../../shared/sound';
 
-type Mode = 'paint' | 'erase' | 'pending';
+type Mode = 'paint' | 'erase' | 'pending' | 'none';
 
 interface Drag {
   pointerId: number;
@@ -73,7 +74,13 @@ export function Board() {
     d.start = d.last = i;
     beginGesture();
     const cur = marks.value[i];
-    if (cur === EMPTY) {
+    if (settings.value.hard) {
+      // Hard mode: no ✕ marks. A tap toggles a crown; dragging does nothing.
+      const next = cur === QUEEN ? EMPTY : QUEEN;
+      setCell(i, next);
+      feedback(next);
+      d.mode = 'none';
+    } else if (cur === EMPTY) {
       setCell(i, X);
       feedback(X);
     } else if (cur === QUEEN) {
@@ -119,11 +126,12 @@ export function Board() {
       setCell(d.start, QUEEN);
       feedback(QUEEN);
     }
+    const placedQueen = d.mode === 'pending' || (d.mode === 'none' && marks.value[d.start] === QUEEN);
     const result = endGesture();
     if (result === 'win') {
       haptic.win();
       sound.win();
-    } else if (result === 'conflict' && d.mode === 'pending') {
+    } else if (result === 'conflict' && placedQueen) {
       haptic.conflict();
       sound.conflict();
     }

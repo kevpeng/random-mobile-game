@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -6,8 +7,19 @@ import { VitePWA } from 'vite-plugin-pwa';
 // GitHub Pages serves the site from /<repo>/; override with BASE=/ for local previews.
 const base = process.env.BASE ?? '/random-mobile-game/';
 
+// Shown on the home screen so it's easy to tell which build a phone is running.
+const commit = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD').toString().trim();
+  } catch {
+    return 'dev';
+  }
+})();
+const version = `${commit} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+
 export default defineConfig({
   base,
+  define: { __APP_VERSION__: JSON.stringify(version) },
   plugins: [
     preact(),
     VitePWA({

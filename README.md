@@ -12,6 +12,7 @@ Play: https://kevpeng.github.io/random-mobile-game/ — on iPhone, open in Safar
 - Tap: empty → ✕ → crown → empty
 - Drag: paint ✕s (drag starting on a ✕ or crown erases ✕s instead)
 - Undo / Clear / Hint (+10s) / New; board size and settings live under the size chip
+- **Hard mode** (menu): no ✕ marks at all — a tap places or removes a crown. Best times are kept separately.
 
 ## Sort controls
 
@@ -22,7 +23,9 @@ Play: https://kevpeng.github.io/random-mobile-game/ — on iPhone, open in Safar
 
 Both games have a timer that starts on your first move, pauses while the app or game is in the background, and stops when you win (Sort also stops it on the out-of-moves screen). Best times are kept per board size / difficulty.
 
-Haptics on iPhone need **iOS 18+** with **Settings → Sounds & Haptics → System Haptics** on. Safari only allows one light tick, played as your finger lifts; Android gets full vibration patterns.
+Haptics on iPhone need **iOS 18+** with **Settings → Sounds & Haptics → System Haptics** on. Safari only allows one light tick per tap, played during the tap's click (or as the finger lifts after a drag); Android gets full vibration patterns. On iPhone, the menu has a **Haptics check** row to see which timing your device accepts.
+
+The build id (commit · time) is shown at the bottom of the home screen, so you can tell whether your phone has picked up the latest deploy.
 
 ## Development
 
