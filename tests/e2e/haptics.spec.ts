@@ -52,3 +52,29 @@ test('iOS path ticks in Sort too', async ({ page }) => {
   await page.locator('[data-tube="0"]').tap();
   await expect.poll(() => ticks(page)).toBe(base + 2);
 });
+
+test('quick double tap on a board cell places a crown and ticks twice', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.game-card', { hasText: 'Queens' }).tap();
+  await expect(page.locator('.cell')).toHaveCount(64);
+  await page.waitForTimeout(600); // outside the double-tap window of the card tap
+  const base = await ticks(page);
+  const cell = page.locator('.cell[data-i="0"]');
+  await cell.tap();
+  await cell.tap(); // well inside the 500ms window: second touchstart is cancelled
+  await expect(page.locator('.cell[data-i="0"] .queen')).toHaveCount(1);
+  await expect.poll(() => ticks(page)).toBe(base + 2);
+  expect(await page.evaluate(() => visualViewport?.scale ?? 1)).toBe(1);
+});
+
+test('haptics check buttons play a tick each', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.game-card', { hasText: 'Sort' }).tap();
+  await page.getByRole('button', { name: 'Menu' }).tap();
+  const base = await ticks(page);
+  for (const name of ['Touch', 'Lift', 'Tap']) {
+    await page.waitForTimeout(600);
+    await page.locator('.hcheck').getByRole('button', { name }).tap();
+  }
+  await expect.poll(() => ticks(page)).toBe(base + 3);
+});

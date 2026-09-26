@@ -1,11 +1,11 @@
-import { bests, elapsedMs, hintsUsed, newBest, newGame, puzzle } from '../state/store';
+import { bestKey, bests, elapsedMs, hintsUsed, newBest, newGame, puzzle, settings } from '../state/store';
 import { Confetti } from '../../shared/Confetti';
 import { formatTime } from '../../shared/format';
 import { haptic } from '../../shared/haptics';
 
 export function WinOverlay() {
   const p = puzzle.value!;
-  const best = bests.value[p.size];
+  const best = bests.value[bestKey(p.size)];
   const hints = hintsUsed.value;
   return (
     <>
@@ -13,7 +13,7 @@ export function WinOverlay() {
       <div class="win" role="dialog" aria-label="Solved">
         <div class="win__card">
           <div class="win__stats">
-            <div class="win__title">Solved</div>
+            <div class="win__title">Solved{settings.value.hard ? ' · Hard' : ''}</div>
             <div class="win__time">{formatTime(elapsedMs())}</div>
             <div class="win__meta">
               {newBest.value ? '★ New best' : best !== undefined ? `Best ${formatTime(best)}` : ''}

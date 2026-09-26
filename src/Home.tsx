@@ -49,6 +49,7 @@ export function Home() {
           </button>
         ))}
       </div>
+      <p class="home__version">{__APP_VERSION__}</p>
     </div>
   );
 }

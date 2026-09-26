@@ -1,5 +1,5 @@
 import { useSignal } from '@preact/signals';
-import { restoreOrStart, puzzle, timer, won } from '../state/store';
+import { restoreOrStart, puzzle, settings, timer, won } from '../state/store';
 import { Board } from './Board';
 import { haptic } from '../../shared/haptics';
 import { ChevronDown } from '../../shared/icons';
@@ -23,7 +23,7 @@ export function QueensGame() {
           onClick={() => (menu.value = true)}
           aria-label="Menu"
         >
-          Queens · {n}×{n} <ChevronDown />
+          Queens · {n}×{n}{settings.value.hard ? ' · Hard' : ''} <ChevronDown />
         </button>
         <TimerView timer={timer} />
       </header>

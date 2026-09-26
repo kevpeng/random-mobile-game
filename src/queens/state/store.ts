@@ -1,6 +1,6 @@
 import { batch, computed, effect, signal } from '@preact/signals';
 import { blocked, conflicts, isSolved } from '../game/rules';
-import { EMPTY, QUEEN, type Puzzle } from '../game/types';
+import { EMPTY, QUEEN, X, type Puzzle } from '../game/types';
 import { load, save } from '../../shared/storage';
 import { createTimer } from '../../shared/timer';
 import { prefetch, takePuzzle } from './puzzles';
@@ -8,6 +8,8 @@ import { prefetch, takePuzzle } from './puzzles';
 export interface Settings {
   size: number;
   autoX: boolean;
+  /** Hard mode: no ✕ marks at all, crowns only. */
+  hard: boolean;
 }
 
 const SETTINGS_KEY = 'queens:settings:v1';
@@ -17,9 +19,11 @@ export const HINT_PENALTY_MS = 10_000;
 const HISTORY_CAP = 300;
 
 export const settings = signal<Settings>(
-  load(SETTINGS_KEY, { size: 8, autoX: true }),
+  load(SETTINGS_KEY, { size: 8, autoX: true, hard: false }),
 );
-export const bests = signal<Record<number, number>>(load(BESTS_KEY, {}));
+/** Best times, keyed by size ("8") or size + hard ("8h"). */
+export const bests = signal<Record<string, number>>(load(BESTS_KEY, {}));
+export const bestKey = (size: number, hard = settings.value.hard) => `${size}${hard ? 'h' : ''}`;
 
 export const puzzle = signal<Puzzle | null>(null);
 export const marks = signal<number[]>([]);
@@ -46,7 +50,7 @@ export const conflictCells = computed(() => {
 
 export const blockedCells = computed(() => {
   const p = puzzle.value;
-  if (!p || !settings.value.autoX) return new Uint8Array(0);
+  if (!p || !settings.value.autoX || settings.value.hard) return new Uint8Array(0);
   return blocked(p, marks.value);
 });
 
@@ -83,9 +87,10 @@ function checkWin(): boolean {
   const t = elapsedMs();
   batch(() => {
     won.value = true;
-    const prev = bests.value[p.size];
+    const k = bestKey(p.size);
+    const prev = bests.value[k];
     newBest.value = prev === undefined || t < prev;
-    if (newBest.value) bests.value = { ...bests.value, [p.size]: t };
+    if (newBest.value) bests.value = { ...bests.value, [k]: t };
   });
   return true;
 }
@@ -96,6 +101,16 @@ export function undo(): void {
   batch(() => {
     marks.value = h[h.length - 1];
     history.value = h.slice(0, -1);
+  });
+}
+
+/** Turns hard mode on/off; turning it on wipes existing ✕ marks (undoable). */
+export function setHard(on: boolean): void {
+  settings.value = { ...settings.value, hard: on };
+  if (!on || won.value || !marks.value.includes(X)) return;
+  batch(() => {
+    history.value = [...history.value, marks.value];
+    marks.value = marks.value.map((m) => (m === X ? EMPTY : m));
   });
 }
 
