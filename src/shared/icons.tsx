@@ -61,3 +61,12 @@ export const RestartIcon = () => (
     <path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5" {...s} />
   </svg>
 );
+
+/** A path that stops at a wall — for the Sort dead-end screen. */
+export const DeadEndIcon = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 20V11a5 5 0 0 1 5-5h6" {...s} />
+    <path d="M19 3v7" {...s} stroke-width={3} />
+    <path d="M12 3l3 3-3 3" {...s} />
+  </svg>
+);

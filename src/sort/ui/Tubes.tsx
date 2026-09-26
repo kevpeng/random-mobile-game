@@ -368,7 +368,7 @@ export function Tubes() {
           {st.map((_, s) => {
             const t = L.tubes[s];
             const done = isComplete(cs[s], cap);
-            const hinted = hm && hm !== 'stuck' && (hm[0] === s || hm[1] === s);
+            const hinted = hm && hm !== 'none' && (hm[0] === s || hm[1] === s);
             return (
               <div
                 key={s}

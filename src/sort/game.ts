@@ -68,13 +68,33 @@ export function hasUsefulMove(stacks: Stacks, cap: number): boolean {
  * Returns a move list, or null if unsolvable (or the node budget ran out).
  */
 export function solve(start: Stacks, cap: number, budget = 200_000): Move[] | null {
+  return analyze(start, cap, budget).path;
+}
+
+export interface Analysis {
+  /** A solution from this position, if one was found. */
+  path: Move[] | null;
+  /** False if the search ran out of budget, so "no path" isn't proof of a dead end. */
+  complete: boolean;
+}
+
+/**
+ * Like solve(), but says whether the search was exhaustive. With
+ * `complete && !path` the position is a proven dead end (the pruning below
+ * only skips moves that can never matter).
+ */
+export function analyze(start: Stacks, cap: number, budget = 200_000): Analysis {
   const seen = new Set<string>();
   const path: Move[] = [];
   const key = (st: Stacks) => st.map((s) => s.join(',')).sort().join('|');
+  let exhausted = false;
 
   const go = (st: Stacks): boolean => {
     if (isSolved(st, cap)) return true;
-    if (--budget <= 0) return false;
+    if (--budget <= 0) {
+      exhausted = true;
+      return false;
+    }
     const k = key(st);
     if (seen.has(k)) return false;
     seen.add(k);
@@ -107,7 +127,21 @@ export function solve(start: Stacks, cap: number, budget = 200_000): Move[] | nu
     return false;
   };
 
-  return go(start) ? path : null;
+  const found = go(start);
+  return { path: found ? path : null, complete: found || !exhausted };
+}
+
+/**
+ * For a dead end: how many moves back (1..history.length) the most recent
+ * winnable position is, or null if none is found within the budget.
+ * `history` is oldest → newest.
+ */
+export function lastWinnable(history: Stacks[], cap: number, budget = 200_000): number | null {
+  for (let back = 1; back <= history.length; back++) {
+    const a = analyze(history[history.length - back], cap, budget);
+    if (a.path) return back;
+  }
+  return null;
 }
 
 export interface SortPuzzle {

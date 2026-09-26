@@ -10,7 +10,8 @@ import {
   isComplete,
   isSolved,
   moveCount,
-  solve,
+  analyze,
+  type Analysis,
   type Move,
   type SortConfig,
   type SortPuzzle,
@@ -51,14 +52,23 @@ export const won = signal(false);
 /** Which records the current win set. */
 export const newBest = signal({ moves: false, time: false });
 export const timer = createTimer();
-/** A suggested move to highlight, or 'stuck' when there's no way forward. */
-export const hintMove = signal<Move | 'stuck' | null>(null);
+/** A suggested move to highlight, or 'none' when the solver couldn't find one. */
+export const hintMove = signal<Move | 'none' | null>(null);
+/** Proven (by exhaustive search) that this position can't be finished. */
+export const deadEnd = signal(false);
+/** For a stuck position: moves back to the most recent winnable one. */
+export const rescueBack = signal<number | null>(null);
 
 export const colorStacks = computed<Stacks>(() => (puzzle.value ? colorsOf(puzzle.value, stacks.value) : []));
 
 /** True when the game isn't won but no useful move is left. */
 export const outOfMoves = computed(
   () => !!puzzle.value && !won.value && !hasUsefulMove(colorStacks.value, puzzle.value.config.height),
+);
+
+/** Why the game can't go on: no legal move at all, or moves that all lead nowhere. */
+export const stuck = computed<'no-moves' | 'dead-end' | null>(() =>
+  outOfMoves.value ? 'no-moves' : deadEnd.value && !won.value ? 'dead-end' : null,
 );
 
 // --- worker -------------------------------------------------------------------
@@ -113,6 +123,8 @@ function start(p: SortPuzzle): void {
     moves.value = 0;
     selected.value = null;
     won.value = false;
+    deadEnd.value = false;
+    rescueBack.value = null;
     newBest.value = { moves: false, time: false };
     hintMove.value = null;
   });
@@ -201,18 +213,75 @@ export function undo(): void {
   timer.start();
 }
 
+/** Jumps back `n` moves at once (used by "back to last winnable position"). */
+export function rewind(n: number): void {
+  const h = history.value;
+  if (n < 1 || n > h.length || won.value) return;
+  batch(() => {
+    stacks.value = h[h.length - n];
+    history.value = h.slice(0, h.length - n);
+    moves.value += n; // like n undos
+    selected.value = null;
+    hintMove.value = null;
+  });
+  timer.start();
+}
+
+const analyzeIn = (cs: Stacks, cap: number) =>
+  ask<Analysis>({ type: 'analyze', stacks: cs, cap }, () => analyze(cs, cap, 400_000));
+
 let hintToken = 0;
 export async function hint(): Promise<void> {
   const p = puzzle.value;
   if (!p || won.value) return;
   const token = ++hintToken;
   const cs = colorStacks.value;
-  const cap = p.config.height;
-  const path = await ask<Move[] | null>({ type: 'solve', stacks: cs, cap }, () => solve(cs, cap, 400_000));
+  const a = await analyzeIn(cs, p.config.height);
   if (token !== hintToken || colorStacks.value !== cs) return; // board changed meanwhile
   batch(() => {
     selected.value = null;
-    hintMove.value = path && path.length ? path[0] : 'stuck';
+    if (a.path && a.path.length) hintMove.value = a.path[0];
+    else if (a.complete) deadEnd.value = true;
+    else hintMove.value = 'none';
+  });
+}
+
+// --- dead-end watch ------------------------------------------------------------
+// After every move the worker searches the position exhaustively; if it proves
+// there's no way to finish, the dead-end screen appears.
+
+let watchToken = 0;
+let watchTimer: ReturnType<typeof setTimeout> | undefined;
+const WATCH_DELAY_MS = 250; // wait for a pause in play so searches don't pile up
+
+function watchForDeadEnd(): void {
+  effect(() => {
+    const p = puzzle.value;
+    const cs = colorStacks.value;
+    const hasHistory = history.value.length > 0; // the dealt position is always winnable
+    const token = ++watchToken;
+    clearTimeout(watchTimer);
+    deadEnd.value = false;
+    rescueBack.value = null;
+    if (!p || won.peek() || !hasHistory || outOfMoves.peek()) return;
+    watchTimer = setTimeout(() => {
+      if (token !== watchToken) return;
+      void analyzeIn(cs, p.config.height).then((a) => {
+        if (token === watchToken && a.complete && !a.path) deadEnd.value = true;
+      });
+    }, WATCH_DELAY_MS);
+  });
+  // Once stuck, find how far back the last winnable position is.
+  effect(() => {
+    if (!stuck.value) return;
+    const p = puzzle.peek();
+    const h = history.peek();
+    if (!p || !h.length) return;
+    const token = watchToken;
+    const past = h.slice(-30).map((ids) => colorsOf(p, ids));
+    void ask<number | null>({ type: 'rescue', history: past, cap: p.config.height }, () => null).then((n) => {
+      if (token === watchToken) rescueBack.value = n;
+    });
   });
 }
 
@@ -258,8 +327,9 @@ export function restoreOrStart(): void {
   });
   // The clock stops while the fail screen is up (Undo restarts it).
   effect(() => {
-    if (outOfMoves.value) timer.pause();
+    if (stuck.value) timer.pause();
   });
+  watchForDeadEnd();
   if (typeof document !== 'undefined') {
     const persistTime = () => {
       if (!puzzle.value) return;

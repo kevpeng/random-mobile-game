@@ -1,8 +1,10 @@
 import { useSignal } from '@preact/signals';
+import { useEffect } from 'preact/hooks';
 import { BackButton } from '../../shared/BackButton';
 import { Confetti } from '../../shared/Confetti';
 import { haptic } from '../../shared/haptics';
-import { ChevronDown, HintIcon, NewIcon, RestartIcon, UndoIcon } from '../../shared/icons';
+import { sound } from '../../shared/sound';
+import { ChevronDown, DeadEndIcon, HintIcon, NewIcon, RestartIcon, UndoIcon } from '../../shared/icons';
 import { formatTime } from '../../shared/format';
 import { TimerView } from '../../shared/TimerView';
 import { ToolButton } from '../../shared/ToolButton';
@@ -18,10 +20,12 @@ import {
   moves,
   newBest,
   newGame,
-  outOfMoves,
   puzzle,
+  rescueBack,
   restart,
+  rewind,
   restoreOrStart,
+  stuck,
   timer,
   undo,
   won,
@@ -60,31 +64,50 @@ function SortWin() {
   );
 }
 
-function OutOfMoves() {
+const STUCK_COPY = {
+  'no-moves': { title: 'No moves left', body: 'Every tube is blocked — nothing can move.' },
+  'dead-end': { title: 'Dead end', body: 'Moves are left, but none of them can sort the tubes from here.' },
+} as const;
+
+function DeadEnd(props: { reason: 'no-moves' | 'dead-end' }) {
+  const copy = STUCK_COPY[props.reason];
+  const back = rescueBack.value;
   const canUndo = history.value.length > 0;
+  const press = () => haptic.tap();
+  useEffect(() => {
+    sound.conflict();
+  }, []);
   return (
-    <div class="win fail" role="dialog" aria-label="Out of moves">
-      <div class="win__card">
-        <div class="win__stats">
-          <div class="win__title">No moves left</div>
-          <div class="win__time">Stuck</div>
-          <div class="win__meta">
-            {formatTime(timer.elapsed())} · {plural(moves.value)}
-          </div>
+    <div class="deadend" role="dialog" aria-label={copy.title}>
+      <div class="deadend__card">
+        <div class="deadend__icon" aria-hidden="true">
+          <DeadEndIcon />
         </div>
-        <div class="fail__actions">
-          {canUndo && (
-            <button class="btn btn--primary" onPointerDown={() => haptic.tap()} onClick={undo}>
-              Undo
+        <h2 class="deadend__title">{copy.title}</h2>
+        <p class="deadend__body">{copy.body}</p>
+        <p class="deadend__stats">
+          {formatTime(timer.elapsed())} · {plural(moves.value)}
+        </p>
+        <div class="deadend__actions">
+          {back !== null && back > 1 && (
+            <button class="btn btn--primary" onPointerDown={press} onClick={() => rewind(back)}>
+              Back to last winnable position
+              <small>{back} moves back</small>
             </button>
           )}
-          <button
-            class={`btn ${canUndo ? 'btn--ghost' : 'btn--primary'}`}
-            onPointerDown={() => haptic.tap()}
-            onClick={restart}
-          >
-            Restart
-          </button>
+          {canUndo && (
+            <button class={`btn ${back !== null && back > 1 ? 'btn--ghost' : 'btn--primary'}`} onPointerDown={press} onClick={undo}>
+              Undo last move
+            </button>
+          )}
+          <div class="deadend__row">
+            <button class="btn btn--ghost" onPointerDown={press} onClick={restart}>
+              Restart
+            </button>
+            <button class="btn btn--ghost" onPointerDown={press} onClick={() => void newGame()}>
+              New puzzle
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -107,7 +130,7 @@ export function SortGame() {
       </header>
       <main class="stage stage--sort">
         <Tubes />
-        {hintMove.value === 'stuck' && !outOfMoves.value && <div class="toast">No way out from here — undo or restart</div>}
+        {hintMove.value === 'none' && !stuck.value && <div class="toast">Couldn't find a hint — try undoing a few moves</div>}
       </main>
       <nav class="toolbar">
         <ToolButton label="Undo" onPress={undo} disabled={isWon || !history.value.length}>
@@ -124,7 +147,7 @@ export function SortGame() {
         </ToolButton>
       </nav>
       {isWon && <SortWin />}
-      {outOfMoves.value && <OutOfMoves />}
+      {stuck.value && <DeadEnd reason={stuck.value} />}
       {menu.value && <SortMenu onClose={() => (menu.value = false)} />}
     </div>
   );

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  analyze,
   applyMove,
   colorsOf,
   generateSort,
   hasUsefulMove,
   isSolved,
+  lastWinnable,
   moveCount,
   solve,
   topRun,
@@ -76,5 +78,31 @@ describe('hasUsefulMove', () => {
   });
   it('is true when a mixed stack can go into an empty tube', () => {
     expect(hasUsefulMove([[0, 1], [1, 0], []], 2)).toBe(true);
+  });
+});
+
+describe('dead-end analysis', () => {
+  // 3 colours, height 3, one spare tube. Two moves from a winnable deal reach a dead end.
+  const initial = [[0, 0, 1], [0, 2, 1], [1, 2, 2], []];
+  const dead = [[0, 0], [0, 2], [1, 2, 2], [1, 1]];
+
+  it('proves a dead end exhaustively (moves exist, no solution)', () => {
+    expect(hasUsefulMove(dead, 3)).toBe(true);
+    expect(analyze(dead, 3)).toEqual({ path: null, complete: true });
+  });
+  it('never calls a position dead when the search runs out of budget', () => {
+    const a = analyze(dead, 3, 3);
+    expect(a.path).toBeNull();
+    expect(a.complete).toBe(false);
+  });
+  it('winnable positions come back with a path', () => {
+    const a = analyze(initial, 3);
+    expect(a.complete).toBe(true);
+    expect(a.path).not.toBeNull();
+  });
+  it('lastWinnable finds how far back to rewind', () => {
+    expect(lastWinnable([initial], 3)).toBe(1);
+    expect(lastWinnable([dead, dead], 3)).toBeNull();
+    expect(lastWinnable([initial, dead, dead], 3)).toBe(3);
   });
 });

@@ -417,20 +417,83 @@ button {
   background: var(--bg);
 }
 
-/* Appears quickly (no win-animation delay) with a small shake. */
-.win.fail {
-  animation: slide-up 0.35s var(--spring) both;
+/* ---- sort: stuck / dead end ---- */
+.deadend {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(20, 18, 16, 0.5);
+  -webkit-backdrop-filter: blur(1px);
+  backdrop-filter: blur(1px);
+  animation: fade-in 0.2s ease-out both;
 }
-.fail .win__card {
-  animation: shake 0.4s ease-out 0.3s;
+.deadend__card {
+  width: min(360px, 100%);
+  background: var(--surface);
+  border-radius: 28px;
+  padding: 24px 20px 20px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  animation: card-in 0.35s var(--spring) both, shake 0.4s ease-out 0.35s;
 }
-.fail__actions {
-  display: flex;
-  flex-direction: column;
+.deadend__icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+}
+.deadend__icon svg {
+  width: 30px;
+  height: 30px;
+}
+.deadend__title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.deadend__body {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+.deadend__stats {
+  margin: 10px 0 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.deadend__actions {
+  display: grid;
   gap: 8px;
 }
-.fail__actions .btn {
-  padding: 12px 20px;
+.deadend__actions .btn {
+  padding: 14px 16px;
+  font-size: 16px;
+}
+.deadend__actions .btn small {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.deadend__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+@keyframes card-in {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
 }
 @keyframes shake {
   20%,
