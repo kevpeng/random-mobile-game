@@ -5,6 +5,7 @@ import {
   applyMove,
   colorsOf,
   generateSort,
+  hasUsefulMove,
   isComplete,
   isSolved,
   moveCount,
@@ -47,6 +48,11 @@ export const newBest = signal(false);
 export const hintMove = signal<Move | 'stuck' | null>(null);
 
 export const colorStacks = computed<Stacks>(() => (puzzle.value ? colorsOf(puzzle.value, stacks.value) : []));
+
+/** True when the game isn't won but no useful move is left. */
+export const outOfMoves = computed(
+  () => !!puzzle.value && !won.value && !hasUsefulMove(colorStacks.value, puzzle.value.config.height),
+);
 
 // --- worker -------------------------------------------------------------------
 
@@ -114,7 +120,7 @@ export function restart(): void {
   if (puzzle.value) start(puzzle.value);
 }
 
-export type TapResult = 'lift' | 'drop' | 'move' | 'complete' | 'win' | 'switch' | 'blocked' | null;
+export type TapResult = 'lift' | 'drop' | 'move' | 'complete' | 'win' | 'switch' | 'blocked' | 'stuck' | null;
 
 export function tapStack(i: number): TapResult {
   const p = puzzle.value;
@@ -161,6 +167,7 @@ export function tapStack(i: number): TapResult {
     });
     return 'win';
   }
+  if (outOfMoves.value) return 'stuck';
   return isComplete(after[i], cap) ? 'complete' : 'move';
 }
 

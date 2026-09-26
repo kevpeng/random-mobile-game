@@ -148,6 +148,10 @@ export function Tubes() {
       case 'blocked':
         haptic.conflict();
         break;
+      case 'stuck':
+        haptic.conflict();
+        sound.conflict();
+        break;
     }
     if (r === 'blocked') {
       const el = wrap.current?.querySelector<HTMLElement>(`[data-tube="${i}"]`);

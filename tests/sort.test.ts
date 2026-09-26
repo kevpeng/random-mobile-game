@@ -3,6 +3,7 @@ import {
   applyMove,
   colorsOf,
   generateSort,
+  hasUsefulMove,
   isSolved,
   moveCount,
   solve,
@@ -60,4 +61,20 @@ describe('sort generator', () => {
       }
     }, 30_000);
   }
+});
+
+describe('hasUsefulMove', () => {
+  it('is false when every open tube has a mismatched top', () => {
+    // Tubes: [0] [1] [2,2] [0,3] [1,3] with height 2: nothing can go anywhere.
+    expect(hasUsefulMove([[0], [1], [2, 2], [0, 3], [1, 3]], 2)).toBe(false);
+  });
+  it('ignores pouring a single-colour stack into an empty tube', () => {
+    expect(hasUsefulMove([[0, 0], [1], []], 2)).toBe(false);
+  });
+  it('is true when a matching top has room', () => {
+    expect(hasUsefulMove([[0], [1, 0], [2, 2]], 2)).toBe(true);
+  });
+  it('is true when a mixed stack can go into an empty tube', () => {
+    expect(hasUsefulMove([[0, 1], [1, 0], []], 2)).toBe(true);
+  });
 });
