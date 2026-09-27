@@ -1,167 +1,144 @@
 import { mulberry32 } from '../../shared/rng';
-import {
-  applyPanel,
-  CROWD_SHOWN,
-  CROWD_SPACING,
-  crowdHalf,
-  ENDLESS_STRETCH,
-  endlessChunk,
-  hitsSquad,
-  type GateKind,
-  type LevelSpec,
-  type SquadSpec,
-} from './levels';
+import { applyGate, endlessGates, endlessWave, type GateKind, type GateSpec, type LevelSpec, type WaveSpec } from './levels';
 import { Pool } from './pool';
 
 export const STEP = 1 / 60;
-/** How fast the track scrolls toward you (world units per second). */
-export const RUN_SPEED = 2.4;
-/** Screen depth your crowd runs at. */
-export const CROWD_Z = 1.3;
-/** Depth of track visible ahead (the camera frames 0..VIEW). */
-export const VIEW = 15;
-/** The crowd stops this far in front of the base and charges it. */
-const SIEGE_GAP = 1.6;
-/** Most troops drawn at once (the real count can be far higher). */
-export const MAX_SHOWN = CROWD_SHOWN;
+/** How fast the ground rolls toward you, carrying gates (world units per second). */
+export const BELT_SPEED = 1.4;
+export const UNIT_SPEED = 3.4;
+/** Mobs ride the belt and walk toward you on top of it. */
+export const ENEMY_SPEED = BELT_SPEED + 0.35;
+export const CANNON_Z = 0.35;
+/** Mobs reaching this depth hit your base. */
+export const LOSE_Z = 0.6;
+/** Hits your base can take before the level is lost. */
+export const BASE_HP = 20;
+/** How fast mobs drift sideways toward your gun (lane widths per second). */
+const ENEMY_HOMING = 0.22;
+export const CHAMPION_HP = 10;
+export const MAX_PLAYERS = 2500;
 export const MAX_ENEMIES = 1500;
-const MAX_SQUAD_SHOWN = 160;
-const SPACING = CROWD_SPACING;
-const LANE_W = 1.9;
-const STEER = 9;
-const RUNNER_SPEED = 4;
-/** Runner flag in Pool.gates: a troop charging the base (not part of the formation). */
-const RUNNER = 1;
+/** Past this many bullets per shot, extra bullets fold into bigger ones. */
+const SPREAD_MAX = 12;
+const CELL = 0.25;
+const SEEK_RANGE = 1.1;
 
 /** Visual & collision radius for a unit with `hp` hit points. */
 export const radius = (hp: number) => 0.05 * (1 + 0.45 * Math.log2(Math.max(1, hp)));
 
 export interface Upgrades {
-  troops: number; // bigger starting crowd
-  rally: number; // recruits join while running
-  boost: number; // free ×(1+boost) at the start line
+  fire: number; // fire rate level
+  shot: number; // extra bullets per shot
+  champ: number; // champion frequency level
+  boost: number; // head start: bullets per shot ×(1+boost)
 }
-export const NO_UPGRADES: Upgrades = { troops: 0, rally: 0, boost: 0 };
+export const NO_UPGRADES: Upgrades = { fire: 0, shot: 0, champ: 0, boost: 0 };
 
 export function stats(u: Upgrades) {
   return {
-    start: 10 + 5 * u.troops,
-    rallyPerSec: 0.6 * u.rally,
+    fireRate: 4 + 0.8 * u.fire, // shots per second
+    perShot: (1 + u.shot) * (1 + u.boost),
+    championEvery: Math.max(6, 24 - 3 * u.champ),
   };
 }
 
 export interface Gate {
   id: number;
-  /** Row this panel belongs to (panels in a row pass together). */
-  row: number;
-  /** Distance along the track. */
-  d: number;
-  /** Screen depth (d − distance run). */
-  z: number;
-  x0: number;
-  x1: number;
   kind: GateKind;
   n: number;
-  /** True once its row has gone past the crowd. */
-  passed: boolean;
-  /** The panel the crowd ran through. */
+  x0: number;
+  x1: number;
+  /** Depth: rides the belt from the far end toward the gun. */
+  z: number;
+  /** Taken by the gun (then it fades out). */
   taken: boolean;
-  /** Visual: seconds since triggered. */
+  /** Visual: seconds since taken. */
   flash: number;
-  /** Visual: > 0 dims the panel (rows already passed, panels not taken). */
+  /** Visual: > 0 dims it (it has gone past the gun untaken). */
   cool: number;
-  /** (unused; gates never break) */
   broken: boolean;
 }
 
-export interface Squad {
-  id: number;
-  d: number;
-  z: number;
+export type MobEvent =
+  | { type: 'gate'; gate: number; kind: GateKind; n: number; x: number; z: number }
+  | { type: 'kill'; x: number; z: number; big: boolean }
+  | { type: 'base'; dmg: number }
+  | { type: 'shot'; champion: boolean };
+
+interface Spawn {
+  t: number;
   x: number;
-  half: number;
   hp: number;
-  /** Hit points left (count × hp at the start). */
-  left: number;
-  /** Depth of its formation on screen. */
-  depth: number;
-  done: boolean;
 }
 
-export type MobEvent =
-  | { type: 'gate'; gate: number; gain: number; x: number; z: number }
-  | { type: 'kill'; x: number; z: number; big: boolean }
-  | { type: 'tower'; dmg: number }
-  | { type: 'fight'; squad: number };
-
 export class World {
-  /** Your troops as drawn: the formation (capped) plus runners charging the base. */
-  readonly players = new Pool(MAX_SHOWN + 200);
-  /** Enemy squads as drawn. */
+  readonly players = new Pool(MAX_PLAYERS);
   readonly enemies = new Pool(MAX_ENEMIES);
-  readonly gates: Gate[] = [];
-  readonly squads: Squad[] = [];
-  /** Visible depth: the camera frames the lane from here to the crowd. */
-  readonly length = VIEW;
-  /** Distance to the base along the track. */
-  readonly trackLength: number;
+  gates: Gate[] = [];
+  readonly length: number;
   readonly endless: boolean;
-  readonly towerMax: number;
-  towerHp: number;
-  /** Screen depth of the base. */
-  towerZ = Infinity;
-  /** Your troop count: every gate and fight changes this. */
-  troops: number;
-  /** Crowd centre across the lane, and where the finger wants it. */
-  crowdX = 0;
+  baseHp = BASE_HP;
+  cannonX = 0;
   targetX = 0;
-  /** Distance run. */
-  scroll = 0;
+  /** The gun auto-fires; tests can switch it off. */
+  firing = true;
+  /** Bullets per shot and shots per second: gates change these. */
+  perShot: number;
+  fireRate: number;
+  /** How far the belt has rolled (drives the ground texture). */
+  belt = 0;
   time = 0;
+  shots = 0;
   kills = 0;
-  phase: 'run' | 'fight' | 'siege' = 'run';
+  /** Waves in the level (0 in endless) and how many have started. */
+  readonly wavesTotal: number;
+  wavesStarted = 0;
   state: 'playing' | 'won' | 'lost' = 'playing';
   events: MobEvent[] = [];
-  /** Visual: seconds since the base was last hit. */
-  towerFlash = 9;
 
   private rand: () => number;
-  private stats: ReturnType<typeof stats>;
-  private rallyAcc = 0;
-  private tradeAcc = 0;
-  private chargeAcc = 0;
-  private fighting: Squad | null = null;
-  private seed: number;
-  private nextStretch = 0;
-  private stretchZ = 14;
-  private rowCount = 0;
+  private fireAcc = 0;
+  private championEvery: number;
+  private spawns: Spawn[] = [];
+  private nextSpawn = 0;
+  private waveTimes: number[];
+  private gateQueue: GateSpec[];
+  private nextGate = 0;
   private gateIds = 0;
+  private endlessWaveNo = 0;
+  private endlessMinute = 0;
+  private seed: number;
+  // Collision grid over enemies (linked lists per cell).
+  private cols = Math.ceil(2 / CELL);
+  private rows: number;
+  private head: Int32Array;
+  private next = new Int32Array(MAX_ENEMIES);
 
   constructor(spec: LevelSpec, upgrades: Upgrades = NO_UPGRADES, seed = 1) {
     this.seed = seed;
     this.rand = mulberry32(seed);
-    this.stats = stats({ ...NO_UPGRADES, ...upgrades });
-    this.endless = !Number.isFinite(spec.length);
-    this.trackLength = spec.length;
-    this.towerMax = this.towerHp = spec.towerHp;
-    this.troops = this.stats.start;
-    const rows = [...spec.gates];
-    if (upgrades.boost > 0) rows.unshift({ z: 4, panels: [{ kind: 'mul', n: 1 + upgrades.boost, x0: -1, x1: 1 }] });
-    for (const r of rows) this.addRow(r.z, r.panels);
-    for (const s of spec.squads) this.addSquad(s);
-    this.place();
-    this.layout(0);
+    const s = stats({ ...NO_UPGRADES, ...upgrades });
+    this.perShot = s.perShot;
+    this.fireRate = s.fireRate;
+    this.championEvery = s.championEvery;
+    this.length = spec.length;
+    this.endless = !!spec.endless;
+    this.wavesTotal = spec.waves.length;
+    this.waveTimes = spec.waves.map((w) => w.t).sort((a, b) => a - b);
+    this.gateQueue = [...spec.gates].sort((a, b) => a.t - b.t);
+    for (const w of spec.waves) this.schedule(w);
+    this.rows = Math.ceil(this.length / CELL) + 2;
+    this.head = new Int32Array(this.cols * this.rows);
   }
 
-  private addRow(d: number, panels: { kind: GateKind; n: number; x0: number; x1: number }[]): void {
-    const row = this.rowCount++;
-    for (const p of panels) {
-      this.gates.push({ id: this.gateIds++, row, d, z: d, x0: p.x0, x1: p.x1, kind: p.kind, n: p.n, passed: false, taken: false, flash: 9, cool: 0, broken: false });
+  private schedule(w: WaveSpec): void {
+    for (let i = 0; i < w.count; i++) {
+      const t = w.t + (w.count > 1 ? (w.over * i) / (w.count - 1) : 0);
+      this.spawns.push({ t, x: -0.9 + this.rand() * 1.8, hp: w.hp });
     }
-  }
-
-  private addSquad(s: SquadSpec): void {
-    this.squads.push({ id: this.squads.length, d: s.z, z: s.z, x: s.x, half: Math.min(s.half, 1.2), hp: s.hp, left: s.count * s.hp, depth: 0, done: false });
+    // Keep the not-yet-spawned tail sorted by time.
+    const tail = this.spawns.splice(this.nextSpawn).sort((a, b) => a.t - b.t);
+    this.spawns.push(...tail);
   }
 
   private emit(e: MobEvent): void {
@@ -173,218 +150,197 @@ export class World {
   step(dt = STEP): void {
     if (this.state !== 'playing') return;
     this.time += dt;
-    this.towerFlash += dt;
-    for (const g of this.gates) g.flash += dt;
-    this.crowdX += (this.targetX - this.crowdX) * Math.min(1, dt * STEER);
-    if (this.endless) this.extendTrack();
+    this.belt += BELT_SPEED * dt;
+    while (this.wavesStarted < this.waveTimes.length && this.waveTimes[this.wavesStarted] <= this.time) this.wavesStarted++;
 
-    if (this.phase === 'run') this.run(dt);
-    else if (this.phase === 'fight') this.fight(dt);
-    else this.siege(dt);
+    // Gun: glide toward the finger, fire on a fixed cadence.
+    this.cannonX += (this.targetX - this.cannonX) * Math.min(1, dt * 18);
+    if (this.firing) this.fireAcc += dt * this.fireRate;
+    while (this.fireAcc >= 1) {
+      this.fireAcc -= 1;
+      this.fire();
+    }
 
-    if (this.troops <= 0 && this.state === 'playing' && !(this.phase === 'siege' && this.runners() > 0)) {
-      this.troops = 0;
+    this.moveGates(dt);
+    this.spawnEnemies();
+    this.movePlayers(dt);
+    this.moveEnemies(dt);
+    if (this.state !== 'playing') return;
+    this.collide();
+    if (!this.endless && this.nextSpawn >= this.spawns.length && this.enemies.n === 0) this.state = 'won';
+  }
+
+  private fire(): void {
+    this.shots++;
+    const champion = this.shots % this.championEvery === 0;
+    if (champion) {
+      this.players.add(this.cannonX, CANNON_Z, CHAMPION_HP * Math.max(1, Math.round(this.perShot / 4)));
+    } else {
+      // Up to SPREAD_MAX bullets fan out; any more make each bullet bigger.
+      const k = Math.min(this.perShot, SPREAD_MAX);
+      const base = Math.floor(this.perShot / k), extra = this.perShot % k;
+      for (let j = 0; j < k; j++) {
+        const off = (j - (k - 1) / 2) * 0.06;
+        this.players.add(clampX(this.cannonX + off), CANNON_Z, base + (j < extra ? 1 : 0), (this.rand() - 0.5) * 0.3);
+      }
+    }
+    this.emit({ type: 'shot', champion });
+  }
+
+  /** Gates appear at the far end on their own clock and ride the belt to the gun. */
+  private moveGates(dt: number): void {
+    if (this.endless) {
+      while (this.endlessMinute * 60 <= this.time + 1) {
+        this.gateQueue.push(...endlessGates(this.seed & 0xffff, this.endlessMinute++));
+      }
+    }
+    while (this.nextGate < this.gateQueue.length && this.gateQueue[this.nextGate].t <= this.time) {
+      const g = this.gateQueue[this.nextGate++];
+      this.gates.push({ id: this.gateIds++, kind: g.kind, n: g.n, x0: g.x0, x1: g.x1, z: this.length - 0.4, taken: false, flash: 9, cool: 0, broken: false });
+    }
+    const line = CANNON_Z + 0.15;
+    for (const g of this.gates) {
+      const z0 = g.z;
+      g.z -= BELT_SPEED * dt;
+      g.flash += dt;
+      if (g.taken || g.cool > 0 || z0 < line || g.z >= line) continue;
+      if (this.cannonX >= g.x0 && this.cannonX <= g.x1) {
+        const next = applyGate(this, g);
+        this.perShot = next.perShot;
+        this.fireRate = next.fireRate;
+        g.taken = true;
+        g.flash = 0;
+        this.emit({ type: 'gate', gate: g.id, kind: g.kind, n: g.n, x: this.cannonX, z: CANNON_Z + 0.3 });
+      } else g.cool = 1;
+    }
+    // Taken gates pop quickly; missed ones roll off the bottom.
+    this.gates = this.gates.filter((g) => (g.taken ? g.flash < 0.25 : g.z > -2.5));
+    for (const g of this.gates) g.broken = g.taken && g.flash >= 0.2;
+  }
+
+  private spawnEnemies(): void {
+    if (this.endless) {
+      const w = endlessWave(this.endlessWaveNo);
+      if (this.time >= w.t - 0.5) {
+        this.schedule(w);
+        this.endlessWaveNo++;
+        this.wavesStarted = this.endlessWaveNo;
+      }
+    }
+    const z = this.length - 0.6;
+    while (this.nextSpawn < this.spawns.length && this.spawns[this.nextSpawn].t <= this.time) {
+      const s = this.spawns[this.nextSpawn++];
+      this.enemies.add(s.x, z, s.hp);
+    }
+  }
+
+  private movePlayers(dt: number): void {
+    const p = this.players;
+    const end = this.length + 0.5;
+    for (let i = p.n - 1; i >= 0; i--) {
+      p.z[i] += UNIT_SPEED * dt;
+      p.vx[i] *= 0.92;
+      p.x[i] = clampX(p.x[i] + p.vx[i] * dt);
+      p.age[i] += dt;
+      if (p.z[i] >= end) p.remove(i); // flew off the far end
+    }
+  }
+
+  private moveEnemies(dt: number): void {
+    const e = this.enemies;
+    for (let i = e.n - 1; i >= 0; i--) {
+      e.z[i] -= ENEMY_SPEED * dt;
+      // Drift toward the gun, so the crowds meet head-on.
+      const dx = this.cannonX - e.x[i];
+      e.x[i] += Math.sign(dx) * Math.min(Math.abs(dx), ENEMY_HOMING * dt);
+      e.age[i] += dt;
+      if (e.z[i] <= LOSE_Z) {
+        this.baseHp -= e.hp[i];
+        this.emit({ type: 'base', dmg: e.hp[i] });
+        e.remove(i);
+      }
+    }
+    if (this.baseHp <= 0) {
+      this.baseHp = 0;
       this.state = 'lost';
     }
-    this.layout(dt);
   }
 
-  private run(dt: number): void {
-    const before = new Map(this.gates.map((g) => [g.id, g.z]));
-    this.scroll += RUN_SPEED * dt;
-    if (!this.endless && this.trackLength - this.scroll <= CROWD_Z + SIEGE_GAP) {
-      this.scroll = this.trackLength - CROWD_Z - SIEGE_GAP;
-      this.phase = 'siege';
+  private collide(): void {
+    const { players: p, enemies: e, cols, rows, head, next } = this;
+    head.fill(-1);
+    const cell = (x: number, z: number) => {
+      const c = Math.min(cols - 1, Math.max(0, Math.floor((x + 1) / CELL)));
+      const r = Math.min(rows - 1, Math.max(0, Math.floor(z / CELL)));
+      return r * cols + c;
+    };
+    for (let j = 0; j < e.n; j++) {
+      const k = cell(e.x[j], e.z[j]);
+      next[j] = head[k];
+      head[k] = j;
     }
-    this.place();
-
-    // Rows reaching the crowd: the panel under the crowd's centre applies.
-    for (const g of this.gates) {
-      if (g.passed || before.get(g.id)! <= CROWD_Z || g.z > CROWD_Z) continue;
-      const row = this.gates.filter((o) => o.row === g.row);
-      const hit = row.find((o) => this.crowdX >= o.x0 && this.crowdX <= o.x1);
-      for (const o of row) {
-        o.passed = true;
-        o.cool = o === hit ? 0 : 1;
-      }
-      if (hit) {
-        const next = applyPanel(this.troops, hit);
-        hit.taken = true;
-        hit.flash = 0;
-        this.emit({ type: 'gate', gate: hit.id, gain: next - this.troops, x: this.crowdX, z: CROWD_Z + 0.3 });
-        this.troops = next;
-      }
-    }
-
-    // Squads reaching the crowd: fight if you're in their way.
-    const front = CROWD_Z + this.crowdDepth();
-    for (const s of this.squads) {
-      if (s.done) continue;
-      if (s.z + s.depth < CROWD_Z - 1) s.done = true; // dodged: it's behind you now
-      else if (s.z <= front && s.z + s.depth >= CROWD_Z - 0.2 && hitsSquad(this.crowdX, this.troops, s)) {
-        this.fighting = s;
-        this.phase = 'fight';
-        this.emit({ type: 'fight', squad: s.id });
-        break;
-      }
-    }
-
-    this.rallyAcc += dt * this.stats.rallyPerSec;
-    if (this.rallyAcc >= 1) {
-      this.troops += Math.floor(this.rallyAcc);
-      this.rallyAcc %= 1;
-    }
-  }
-
-  /** Troops and squad trade 1:1 until one side is gone (or you steer out of it). */
-  private fight(dt: number): void {
-    const s = this.fighting!;
-    if (!hitsSquad(this.crowdX, this.troops, s)) {
-      this.fighting = null;
-      this.phase = 'run';
-      return;
-    }
-    this.tradeAcc += dt * (18 + 1.5 * Math.min(this.troops, s.left));
-    let k = Math.min(Math.floor(this.tradeAcc), this.troops, s.left);
-    this.tradeAcc -= Math.floor(this.tradeAcc);
-    while (k-- > 0) {
-      this.troops--;
-      s.left--;
-      if (s.left % s.hp === 0) {
-        this.kills++;
-        const x = s.x + (this.rand() - 0.5) * Math.min(s.half, 0.8);
-        this.emit({ type: 'kill', x, z: s.z + 0.05, big: s.hp > 1 });
-      }
-    }
-    if (s.left <= 0) {
-      s.done = true;
-      this.fighting = null;
-      this.phase = 'run';
-    }
-  }
-
-  /** At the base: troops stream out and hit it one by one. */
-  private siege(dt: number): void {
-    this.place();
-    this.chargeAcc += dt * Math.max(10, this.troops * 1.2);
-    // Send only as many as the base still needs; the rest stay with you.
-    let needed = this.towerHp - this.runners();
-    while (this.chargeAcc >= 1 && this.troops > 0 && needed-- > 0) {
-      this.chargeAcc -= 1;
-      this.troops--;
-      const i = this.players.add(this.crowdX + (this.rand() - 0.5) * 0.3, CROWD_Z + this.crowdDepth(), 1, 0, RUNNER);
-      if (i < 0) this.hitTower(1); // too many on screen: count the hit straight away
-    }
-    this.chargeAcc = Math.min(this.chargeAcc, 1);
-    const p = this.players;
     for (let i = p.n - 1; i >= 0; i--) {
-      if (p.gates[i] !== RUNNER) continue;
-      p.z[i] += RUNNER_SPEED * dt;
-      p.x[i] += (0 - p.x[i]) * Math.min(1, dt * 2.5);
-      p.age[i] += dt;
-      if (p.z[i] >= this.towerZ - 0.3) {
+      const px = p.x[i], pz = p.z[i];
+      const c0 = Math.floor((px + 1) / CELL), r0 = Math.floor(pz / CELL);
+      for (let dr = -1; dr <= 1 && p.hp[i] > 0; dr++) {
+        const r = r0 + dr;
+        if (r < 0 || r >= rows) continue;
+        for (let dc = -1; dc <= 1 && p.hp[i] > 0; dc++) {
+          const c = c0 + dc;
+          if (c < 0 || c >= cols) continue;
+          for (let j = head[r * cols + c]; j >= 0 && p.hp[i] > 0; j = next[j]) {
+            if (e.hp[j] <= 0) continue;
+            const reach = radius(p.hp[i]) + radius(e.hp[j]);
+            const dx = e.x[j] - px, dz = e.z[j] - pz;
+            if (dx * dx + dz * dz > reach * reach) continue;
+            const dmg = Math.min(p.hp[i], e.hp[j]);
+            p.hp[i] -= dmg;
+            e.hp[j] -= dmg;
+            if (e.hp[j] <= 0) {
+              this.kills++;
+              this.emit({ type: 'kill', x: e.x[j], z: e.z[j], big: dmg > 1 });
+            }
+          }
+        }
+      }
+      if (p.hp[i] <= 0) {
         p.remove(i);
-        this.hitTower(1);
-      }
-    }
-    if (this.towerHp <= 0) {
-      this.towerHp = 0;
-      this.state = 'won';
-    }
-  }
-
-  private hitTower(dmg: number): void {
-    this.towerHp -= dmg;
-    this.towerFlash = 0;
-    this.emit({ type: 'tower', dmg });
-  }
-
-  private runners(): number {
-    let n = 0;
-    for (let i = 0; i < this.players.n; i++) if (this.players.gates[i] === RUNNER) n++;
-    return n;
-  }
-
-  /** Screen positions of everything on the track. */
-  private place(): void {
-    for (const g of this.gates) g.z = g.d - this.scroll;
-    for (const s of this.squads) s.z = s.d - this.scroll;
-    this.towerZ = this.trackLength - this.scroll;
-  }
-
-  private crowdDepth(): number {
-    return SPACING * Math.sqrt(Math.min(this.troops, MAX_SHOWN)) * 0.9;
-  }
-
-  /** Endless: keep laying track ahead, sized to how big your crowd is now. */
-  private extendTrack(): void {
-    while (this.stretchZ < this.scroll + VIEW + 12) {
-      const c = endlessChunk(this.seed & 0xffff, this.nextStretch++, this.stretchZ, this.troops);
-      for (const r of c.gates) this.addRow(r.z, r.panels);
-      for (const s of c.squads) this.addSquad(s);
-      this.stretchZ += ENDLESS_STRETCH;
-    }
-    // Forget what's long gone.
-    const gone = <T extends { z: number }>(xs: T[]) => Math.max(0, xs.findIndex((x) => x.z > -3));
-    if (this.gates.length > 60) this.gates.splice(0, gone(this.gates));
-    if (this.squads.length > 40) this.squads.splice(0, gone(this.squads));
-  }
-
-  /** Visual formations: your crowd around its centre, each squad across the lane it blocks. */
-  private layout(dt: number): void {
-    const p = this.players;
-    const want = Math.min(Math.max(0, Math.floor(this.troops)), MAX_SHOWN);
-    let have = 0;
-    for (let i = 0; i < p.n; i++) if (p.gates[i] !== RUNNER) have++;
-    for (let i = p.n - 1; i >= 0 && have > want; i--) {
-      if (p.gates[i] === RUNNER) continue;
-      p.remove(i);
-      have--;
-    }
-    while (have < want && p.add(this.crowdX, CROWD_Z, 1) >= 0) have++;
-    const k = Math.min(1, dt * 12);
-    let slot = 0;
-    for (let i = 0; i < p.n; i++) {
-      if (p.gates[i] === RUNNER) continue;
-      const r = SPACING * Math.sqrt(slot + 0.5), a = slot * 2.39996;
-      slot++;
-      const tx = this.crowdX + (r * Math.cos(a)) / LANE_W, tz = CROWD_Z + r * Math.sin(a) * 0.9;
-      if (dt === 0) {
-        p.x[i] = tx;
-        p.z[i] = tz;
-      } else {
-        p.x[i] += (tx - p.x[i]) * k;
-        p.z[i] += (tz - p.z[i]) * k;
-      }
-      p.age[i] += dt;
-    }
-
-    const e = this.enemies;
-    e.clear();
-    for (const s of this.squads) {
-      if (s.done && s.left <= 0) continue;
-      if (s.z > VIEW + 1 || s.z < -2) {
-        s.depth = 0.13 * Math.ceil(Math.min(Math.ceil(s.left / s.hp), MAX_SQUAD_SHOWN) / Math.max(1, Math.floor((2 * Math.min(s.half, 0.95) * LANE_W) / 0.14)));
         continue;
       }
-      const shown = Math.min(Math.ceil(s.left / s.hp), MAX_SQUAD_SHOWN);
-      const gap = s.hp > 1 ? 0.24 : 0.14;
-      const cols = Math.max(1, Math.floor((2 * Math.min(s.half, 0.95) * LANE_W) / gap));
-      const rows = Math.ceil(shown / cols);
-      s.depth = rows * gap * 0.9;
-      for (let j = 0; j < shown; j++) {
-        const c = j % cols, r = Math.floor(j / cols);
-        const inRow = r === rows - 1 ? shown - r * cols : cols;
-        const x = s.x + ((c - (inRow - 1) / 2) * gap) / LANE_W;
-        const i = e.add(Math.max(-0.97, Math.min(0.97, x)), s.z + r * gap * 0.9, s.hp);
-        if (i < 0) break;
-        e.age[i] = this.time + j * 0.13;
-      }
+      // Bullets veer toward the nearest mob a little way ahead.
+      // Staggered across steps to keep the cost down with thousands of units.
+      if ((i + this.tick) % 4 === 0) this.seek(i, c0, r0);
     }
+    for (let j = e.n - 1; j >= 0; j--) if (e.hp[j] <= 0) e.remove(j);
+    this.tick++;
   }
 
-  /** Crowd half-width in lane units (for the HUD bubble and tests). */
-  get crowdHalf(): number {
-    return crowdHalf(this.troops);
+  private tick = 0;
+
+  private seek(i: number, c0: number, r0: number): void {
+    const { players: p, enemies: e, cols, rows, head, next } = this;
+    let best = -1;
+    let bestD = SEEK_RANGE * SEEK_RANGE;
+    for (let r = r0; r <= r0 + 4 && r < rows; r++) {
+      for (let c = Math.max(0, c0 - 2); c <= Math.min(cols - 1, c0 + 2); c++) {
+        for (let j = head[r * cols + c]; j >= 0; j = next[j]) {
+          if (e.hp[j] <= 0) continue;
+          const dx = e.x[j] - p.x[i], dz = e.z[j] - p.z[i];
+          const d = dx * dx + dz * dz;
+          if (dz > -0.05 && d < bestD) {
+            bestD = d;
+            best = j;
+          }
+        }
+      }
+    }
+    if (best >= 0) {
+      const dx = e.x[best] - p.x[i];
+      p.vx[i] = Math.max(-1.2, Math.min(1.2, dx * 5));
+    }
   }
+}
+
+function clampX(x: number, lo = -0.97, hi = 0.97): number {
+  return x < lo ? lo : x > hi ? hi : x;
 }
