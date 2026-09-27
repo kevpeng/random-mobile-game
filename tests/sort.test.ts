@@ -10,6 +10,7 @@ import {
   moveCount,
   solve,
   topRun,
+  trappedInLoop,
 } from '../src/sort/game';
 
 describe('sort rules', () => {
@@ -104,5 +105,31 @@ describe('dead-end analysis', () => {
     expect(lastWinnable([initial], 3)).toBe(1);
     expect(lastWinnable([dead, dead], 3)).toBeNull();
     expect(lastWinnable([initial, dead, dead], 3)).toBe(3);
+  });
+});
+
+describe('trappedInLoop', () => {
+  // 3 colours, height 3: the 1s on tube 1 can only hop onto tube 0 and back.
+  const pingPong = [[0, 1], [2, 1, 1], [0, 2], [2, 0]];
+
+  it('catches one ball shuttling between the same two tubes', () => {
+    expect(hasUsefulMove(pingPong, 3)).toBe(true);
+    expect(trappedInLoop(pingPong, 3)).toBe(true);
+    expect(trappedInLoop(applyMove(pingPong, 1, 0, 1), 3)).toBe(true);
+    expect(analyze(pingPong, 3)).toEqual({ path: null, complete: true });
+  });
+  it('is false when a solution is reachable', () => {
+    expect(trappedInLoop([[0, 0, 1], [0, 2, 1], [1, 2, 2], []], 3)).toBe(false);
+    expect(trappedInLoop([[0, 0, 0], [1, 1], [2, 2, 2], [1]], 3)).toBe(false);
+  });
+  it('is false for fresh deals, and gives up quickly on big ones', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const p = generateSort({ colors: 4, height: 4, empty: 2 }, seed);
+      expect(trappedInLoop(colorsOf(p, p.stacks), 4)).toBe(false);
+    }
+    const big = generateSort({ colors: 12, height: 5, empty: 2 }, 7);
+    const t0 = performance.now();
+    expect(trappedInLoop(colorsOf(big, big.stacks), 5)).toBe(false);
+    expect(performance.now() - t0).toBeLessThan(50);
   });
 });

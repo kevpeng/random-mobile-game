@@ -64,6 +64,38 @@ export function hasUsefulMove(stacks: Stacks, cap: number): boolean {
 }
 
 /**
+ * Whether every move left just cycles between a handful of positions — e.g.
+ * one ball ping-ponging between the same two tubes — with no way to finish.
+ * Explores the whole reachable set (same moves as hasUsefulMove) and gives up
+ * with false past `limit` positions, leaving big searches to analyze().
+ */
+export function trappedInLoop(stacks: Stacks, cap: number, limit = 24): boolean {
+  const key = (st: Stacks) => st.map((s) => s.join(',')).sort().join('|');
+  const seen = new Set([key(stacks)]);
+  const queue = [stacks];
+  for (let i = 0; i < queue.length; i++) {
+    const st = queue[i];
+    if (isSolved(st, cap)) return false;
+    for (let from = 0; from < st.length; from++) {
+      const src = st[from];
+      if (!src.length || isComplete(src, cap)) continue;
+      const uniform = topRun(src) === src.length;
+      for (let to = 0; to < st.length; to++) {
+        const n = moveCount(st, from, to, cap);
+        if (!n || (uniform && st[to].length === 0)) continue;
+        const next = applyMove(st, from, to, n);
+        const k = key(next);
+        if (seen.has(k)) continue;
+        if (seen.size >= limit) return false;
+        seen.add(k);
+        queue.push(next);
+      }
+    }
+  }
+  return true;
+}
+
+/**
  * Depth-first search with a visited set, trying promising moves first.
  * Returns a move list, or null if unsolvable (or the node budget ran out).
  */

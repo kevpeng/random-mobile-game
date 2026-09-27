@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { applyMove, colorsOf, lastWinnable, moveCount, solve, type SortPuzzle } from '../../src/sort/game';
+import { applyMove, colorsOf, lastWinnable, moveCount, solve, trappedInLoop, type SortPuzzle } from '../../src/sort/game';
 
 async function savedPuzzle(page: Page): Promise<{ puzzle: SortPuzzle; stacks: number[][] }> {
   await page.waitForFunction(() => {
@@ -45,12 +45,19 @@ test('home → sort, pick up, move, undo, solve', async ({ page }) => {
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect(page.locator('.timer small')).toHaveText('2 moves');
 
-  // Hint highlights two tubes.
+  // Hint points one way: the source is lifted, only the destination pulses.
   await page.getByRole('button', { name: 'Hint' }).click();
-  await expect(page.locator('.tube--hint')).toHaveCount(2);
+  await expect(page.locator('.tube--hint')).toHaveCount(1);
+  await expect(page.locator('.tube--sel')).toHaveCount(1);
+  const from = Number(await page.locator('.tube--sel').getAttribute('data-tube'));
+  const to = Number(await page.locator('.tube--hint').getAttribute('data-tube'));
+  expect(from).not.toBe(to);
+  await tapTube(page, to); // one tap follows the hint
+  await expect(page.locator('.timer small')).toHaveText('3 moves');
+  await expect(page.locator('.tube--hint')).toHaveCount(0);
 
   // Solve with the solver's move list.
-  let cs = colorsOf(puzzle, stacks);
+  let cs = colorsOf(puzzle, (await savedPuzzle(page)).stacks);
   const path = solve(cs, cap)!;
   for (const [f, t] of path) {
     await tapTube(page, f);
@@ -255,12 +262,14 @@ test('drag and drop: valid drop moves, invalid or empty-space drop returns', asy
 });
 
 test('dead end (moves left, but unwinnable) gets the full-screen dead-end dialog', async ({ page }) => {
-  // 3 colours, height 3, one spare tube; colours per piece id:
-  const colors = [0, 0, 1, 0, 2, 1, 1, 2, 2];
-  const initial = [[0, 1, 2], [3, 4, 5], [6, 7, 8], []];
-  const afterOne = [[0, 1], [3, 4, 5], [6, 7, 8], [2]];
-  const dead = [[0, 1], [3, 4], [6, 7, 8], [2, 5]];
-  const back = lastWinnable([initial, afterOne].map((s) => colorsOf({ colors }, s)), 3);
+  // 4 colours, height 4, one spare tube. Moving the top ball into the spare
+  // tube leaves ~50 reachable positions, none solved: only the worker's
+  // search can prove this one (it's too big to count as "going in circles").
+  const colors = [1, 0, 1, 3, 3, 2, 3, 0, 2, 2, 1, 0, 3, 2, 0, 1];
+  const initial = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15], []];
+  const dead = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14], [15]];
+  expect(trappedInLoop(colorsOf({ colors }, dead), 4)).toBe(false);
+  const back = lastWinnable([initial].map((s) => colorsOf({ colors }, s)), 4);
 
   await page.goto('/');
   await page.evaluate(
@@ -269,9 +278,9 @@ test('dead end (moves left, but unwinnable) gets the full-screen dead-end dialog
       localStorage.setItem('puzzles:route:v1', JSON.stringify({ route: 'sort' }));
     },
     {
-      puzzle: { config: { colors: 3, height: 3, empty: 1 }, colors, stacks: initial, seed: 1 },
+      puzzle: { config: { colors: 4, height: 4, empty: 1 }, colors, stacks: initial, seed: 1 },
       stacks: dead,
-      history: [initial, afterOne],
+      history: [initial],
       moves: 2,
       won: false,
       elapsed: 12_000,
@@ -305,4 +314,44 @@ test('dead end (moves left, but unwinnable) gets the full-screen dead-end dialog
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'New puzzle' }).click();
   await expect(dialog).toHaveCount(0);
+});
+
+test('one ball ping-ponging between two tubes shows "Going in circles" right away', async ({ page }) => {
+  // 3 colours, height 3. Tube 1's pair of 1s can only hop one ball onto tube 0
+  // and back again; nothing else moves.
+  const colors = [0, 1, 2, 1, 1, 0, 2, 2, 0];
+  const initial = [[0, 1, 2], [3, 5, 6], [7, 4, 8], []];
+  const loop = [[0, 1], [2, 3, 4], [5, 6], [7, 8]];
+  await page.goto('/');
+  await page.evaluate(
+    (game) => {
+      localStorage.setItem('sort:game:v1', JSON.stringify(game));
+      localStorage.setItem('puzzles:route:v1', JSON.stringify({ route: 'sort' }));
+    },
+    {
+      puzzle: { config: { colors: 3, height: 3, empty: 1 }, colors, stacks: initial, seed: 1 },
+      stacks: loop,
+      history: [initial],
+      moves: 4,
+      won: false,
+      elapsed: 5_000,
+    },
+  );
+  await page.reload();
+  const dialog = page.getByRole('dialog', { name: 'Going in circles' });
+  // Detected on the main thread: no worker search needed.
+  await expect(dialog).toBeVisible({ timeout: 200 });
+  await expect(dialog).toContainText('back and forth');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: 'test-results/sort-10-loop.png' });
+  await dialog.getByRole('button', { name: 'Undo last move' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // The other half of the ping-pong is caught too.
+  await page.evaluate((s) => {
+    const g = JSON.parse(localStorage.getItem('sort:game:v1')!);
+    localStorage.setItem('sort:game:v1', JSON.stringify({ ...g, stacks: s, history: [g.puzzle.stacks] }));
+  }, [[0, 1, 4], [2, 3], [5, 6], [7, 8]]);
+  await page.reload();
+  await expect(dialog).toBeVisible({ timeout: 200 });
 });

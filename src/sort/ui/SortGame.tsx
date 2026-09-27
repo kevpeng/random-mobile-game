@@ -66,10 +66,11 @@ function SortWin() {
 
 const STUCK_COPY = {
   'no-moves': { title: 'No moves left', body: 'Every tube is blocked — nothing can move.' },
+  loop: { title: 'Going in circles', body: 'The only moves left just shuffle the same balls back and forth.' },
   'dead-end': { title: 'Dead end', body: 'Moves are left, but none of them can sort the tubes from here.' },
 } as const;
 
-function DeadEnd(props: { reason: 'no-moves' | 'dead-end' }) {
+function DeadEnd(props: { reason: keyof typeof STUCK_COPY }) {
   const copy = STUCK_COPY[props.reason];
   const back = rescueBack.value;
   const canUndo = history.value.length > 0;
