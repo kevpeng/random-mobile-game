@@ -240,8 +240,8 @@ export function rewind(n: number): void {
   timer.start();
 }
 
-const analyzeIn = (cs: Stacks, cap: number) =>
-  ask<Analysis>({ type: 'analyze', stacks: cs, cap }, () => analyze(cs, cap, 400_000));
+const analyzeIn = (cs: Stacks, cap: number, avoid: Stacks[] = []) =>
+  ask<Analysis>({ type: 'analyze', stacks: cs, cap, avoid }, () => analyze(cs, cap, 400_000, avoid));
 
 let hintToken = 0;
 export async function hint(): Promise<void> {
@@ -249,19 +249,23 @@ export async function hint(): Promise<void> {
   if (!p || won.value) return;
   const token = ++hintToken;
   const cs = colorStacks.value;
-  const a = await analyzeIn(cs, p.config.height);
+  const cap = p.config.height;
+  // Each hint is a fresh search, so without this it could suggest undoing the
+  // move it just gave (e.g. one ball back and forth between two tubes). Steer it
+  // off positions already played; only if that finds nothing, allow them.
+  const past = history.value.slice(-60).map((ids) => colorsOf(p, ids));
+  let a = await analyzeIn(cs, cap, past);
+  if (!a.path && past.length) a = await analyzeIn(cs, cap);
   if (token !== hintToken || colorStacks.value !== cs) return; // board changed meanwhile
+  const mv = a.path?.[0];
   batch(() => {
     selected.value = null;
-    if (a.path && a.path.length) {
+    if (mv) {
       // Point one way: lift the ball(s) out of the source, like a tap would, and
-      // pulse only the destination. (Lighting both tubes alike hid the direction,
-      // so a wrong-way move then "undoing" it looked like the hint's only move.)
-      const [from] = a.path[0];
-      hintMove.value = a.path[0];
-      selected.value = from;
-    }
-    else if (a.complete) deadEnd.value = true;
+      // pulse only the destination.
+      hintMove.value = mv;
+      selected.value = mv[0];
+    } else if (a.complete) deadEnd.value = true;
     else hintMove.value = 'none';
   });
 }

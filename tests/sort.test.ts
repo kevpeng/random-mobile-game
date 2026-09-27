@@ -11,6 +11,7 @@ import {
   solve,
   topRun,
   trappedInLoop,
+  positionKey,
 } from '../src/sort/game';
 
 describe('sort rules', () => {
@@ -132,4 +133,54 @@ describe('trappedInLoop', () => {
     expect(trappedInLoop(colorsOf(big, big.stacks), 5)).toBe(false);
     expect(performance.now() - t0).toBeLessThan(50);
   });
+});
+
+describe('hints never go in circles', () => {
+  it('analyze(avoid) never routes through an avoided position', () => {
+    const start = [[0, 0, 1], [0, 2, 1], [1, 2, 2], []];
+    const first = solve(start, 3)!;
+    const after = applyMove(start, first[0][0], first[0][1], moveCount(start, first[0][0], first[0][1], 3));
+    const a = analyze(after, 3, 200_000, [start]);
+    expect(a.path).not.toBeNull();
+    let st = after;
+    for (const [f, t] of a.path!) {
+      st = applyMove(st, f, t, moveCount(st, f, t, 3));
+      expect(positionKey(st)).not.toBe(positionKey(start));
+    }
+    expect(isSolved(st, 3)).toBe(true);
+  });
+  it("the reported Expert board: hints no longer flip a ball between two tubes", () => {
+    // bottom → top; 12 colours, height 5
+    const board = [[4, 3, 2, 1, 0], [8, 7, 6, 5], [0, 8, 3, 9, 9], [4, 10, 4, 0, 0], [6, 3, 2, 5], [11, 1, 11, 7, 3],
+      [1, 10, 8, 7, 3], [2, 5, 0, 8, 8], [9, 6, 1, 9], [10, 4, 1, 6, 6], [10, 2, 7, 7], [4, 2, 9, 10], [5, 5], [11, 11, 11]];
+    const [f, t] = analyze(board, 5).path![0];
+    const next = applyMove(board, f, t, moveCount(board, f, t, 5));
+    const [f2, t2] = analyze(next, 5, 200_000, [board]).path![0];
+    expect([f2, t2]).not.toEqual([t, f]);
+  });
+  it('taking a fresh hint every move solves without repeating a position', () => {
+    for (const config of [
+      { colors: 4, height: 4, empty: 2 },
+      { colors: 6, height: 4, empty: 2 },
+      { colors: 8, height: 4, empty: 2 },
+    ]) {
+      for (let seed = 1; seed <= 10; seed++) {
+        const p = generateSort(config, seed);
+        let st = colorsOf(p, p.stacks);
+        const past: number[][][] = [];
+        const seen = new Set([positionKey(st)]);
+        for (let step = 0; step < 300 && !isSolved(st, config.height); step++) {
+          let a = analyze(st, config.height, 200_000, past.slice(-60));
+          if (!a.path) a = analyze(st, config.height);
+          const [f, t] = a.path![0];
+          past.push(st);
+          st = applyMove(st, f, t, moveCount(st, f, t, config.height));
+          const k = positionKey(st);
+          expect(seen.has(k), `seed ${seed} revisits a position`).toBe(false);
+          seen.add(k);
+        }
+        expect(isSolved(st, config.height)).toBe(true);
+      }
+    }
+  }, 60_000);
 });
