@@ -8,7 +8,7 @@ import { Overlay, type Floater } from '../render/overlay';
 import { LANE, Renderer } from '../render/renderer';
 import { canUpgrade, lossCoins, UPGRADES, upgradeCost, winCoins } from '../sim/economy';
 import { endlessSpec, levelSpec } from '../sim/levels';
-import { BASE_HP, CANNON_Z, STEP, World } from '../sim/world';
+import { CROWD_Z, STEP, World } from '../sim/world';
 import { addCoins, buy, levelUp, progress, recordEndless } from '../store';
 import { Coin, UpgradeIcon } from './art';
 
@@ -36,7 +36,7 @@ export function MobGame() {
   const uiCanvas = useRef<HTMLCanvasElement>(null);
   const screen = useSignal<Screen>('menu');
   const mode = useSignal<Mode>('level');
-  const hud = useSignal({ units: 0, base: BASE_HP, kills: 0 });
+  const hud = useSignal({ troops: 0, dist: 0 });
   const result = useSignal({ coins: 0, score: 0, best: false });
   const glError = useSignal<string | null>(null);
   const world = useRef<World | null>(null);
@@ -46,7 +46,7 @@ export function MobGame() {
     const p = progress.value;
     world.current =
       m === 'endless'
-        ? new World(endlessSpec(Date.now() & 0xffff), p.upgrades, Date.now() & 0xffffffff)
+        ? new World(endlessSpec(), p.upgrades, Date.now() & 0xffffffff)
         : new World(levelSpec(p.level), p.upgrades, (p.level * 7919) ^ (Date.now() & 0xffff));
   };
 
@@ -84,7 +84,6 @@ export function MobGame() {
     if (!world.current) newWorld('level');
     const particles: Particle[] = [];
     const floaters: Floater[] = [];
-    const gateGain = new Map<number, { gain: number; x: number; z: number; t: number }>();
     let shake = 0;
     let acc = 0;
     let last = performance.now();
@@ -125,36 +124,29 @@ export function MobGame() {
         soundT -= dt;
         for (const e of w.events) {
           if (e.type === 'gate') {
-            const g = gateGain.get(e.gate) ?? { gain: 0, x: e.x, z: e.z, t: 0 };
-            g.gain += e.gain;
-            g.x = e.x;
-            gateGain.set(e.gate, g);
+            const good = e.gain >= 0;
+            floaters.push({ text: good ? `+${e.gain}` : `−${-e.gain}`, x: e.x, z: e.z, age: 0, good });
+            if (good) {
+              sound.mark();
+              haptic.tap();
+            } else {
+              sound.conflict();
+              haptic.conflict();
+              shake = Math.max(shake, 0.5);
+            }
           } else if (e.type === 'kill') {
             puff(e.x, e.z, e.big, renderer.pal.enemy);
+            if (soundT <= 0) {
+              sound.mark();
+              soundT = 0.06;
+            }
+          } else if (e.type === 'fight') {
+            haptic.conflict();
           } else if (e.type === 'tower') {
             shake = Math.min(1, shake + 0.05 * e.dmg);
-          } else if (e.type === 'base') {
-            shake = 1;
-            haptic.conflict();
-            sound.conflict();
-          } else if (e.type === 'break') {
-            haptic.tap();
           }
         }
         w.events.length = 0;
-        // Batch gate gains into one floater per gate every quarter second.
-        for (const [id, g] of gateGain) {
-          g.t += dt;
-          if (g.t >= 0.25 && g.gain > 0) {
-            floaters.push({ text: `+${g.gain}`, x: g.x, z: g.z, age: 0, good: true });
-            if (soundT <= 0) {
-              sound.mark();
-              soundT = 0.08;
-            }
-            haptic.tap();
-            gateGain.delete(id);
-          }
-        }
 
         if (w.state !== 'playing') finish(w);
       }
@@ -185,7 +177,7 @@ export function MobGame() {
       hudT += dt;
       if (hudT > 0.1) {
         hudT = 0;
-        hud.value = { units: Math.round(w.players.total()), base: w.baseHp, kills: w.kills };
+        hud.value = { troops: w.troops, dist: Math.floor(w.scroll) };
       }
     };
     raf = requestAnimationFrame(frame);
@@ -202,7 +194,7 @@ export function MobGame() {
         /** True once the sprite atlas and textures have loaded. */
         artReady: () => renderer.artReady,
         /** On-screen x (CSS px) of a sim lane position at the cannon's depth. */
-        screenX: (simX: number) => renderer.toScreen(simX, 0, CANNON_Z)?.x ?? NaN,
+        screenX: (simX: number) => renderer.toScreen(simX, 0, CROWD_Z)?.x ?? NaN,
         run: (seconds: number) => {
           const w = world.current!;
           for (let s = 0; s < seconds * 60 && w.state === 'playing'; s++) w.step();
@@ -222,8 +214,8 @@ export function MobGame() {
   const finish = (w: World) => {
     const p = progress.value;
     if (w.endless) {
-      const score = w.kills;
-      const coins = Math.floor(score / 10);
+      const score = Math.floor(w.scroll);
+      const coins = Math.floor(score / 5);
       addCoins(coins);
       result.value = { coins, score, best: recordEndless(score) };
       screen.value = 'over';
@@ -231,7 +223,7 @@ export function MobGame() {
       return;
     }
     if (w.state === 'won') {
-      const coins = winCoins(p.level, w.baseHp);
+      const coins = winCoins(p.level, w.troops);
       addCoins(coins);
       result.value = { coins, score: 0, best: false };
       levelUp();
@@ -249,15 +241,15 @@ export function MobGame() {
 
   // --- steering -------------------------------------------------------------------
   // Touch/pen: relative horizontal drag anywhere on the play field.
-  // Mouse (desktop): the cannon follows the pointer, hovering or dragging.
+  // Mouse (desktop): the crowd follows the pointer, hovering or dragging.
   const drag = useRef<{ id: number; x: number; target: number } | null>(null);
-  /** Aims the cannon straight at the lane position under the mouse. */
+  /** Steers the crowd to the lane position under the mouse. */
   const aimAtMouse = (e: PointerEvent) => {
     const w = world.current;
     const r = view.current;
     if (!w || !r || screen.value !== 'playing') return;
     // At a fixed depth the projection is linear in x, so interpolate between the lane edges.
-    const a = r.toScreen(-1, 0, CANNON_Z), b = r.toScreen(1, 0, CANNON_Z);
+    const a = r.toScreen(-1, 0, CROWD_Z), b = r.toScreen(1, 0, CROWD_Z);
     if (!a || !b || a.x === b.x) return;
     const px = e.clientX - host.current!.getBoundingClientRect().left;
     const x = -1 + (2 * (px - a.x)) / (b.x - a.x);
@@ -318,11 +310,8 @@ export function MobGame() {
 
       {s === 'playing' && (
         <div class="mob__hud">
-          <div class="mob__base" aria-label="Base health">
-            <span style={{ width: `${(hud.value.base / BASE_HP) * 100}%` }} />
-          </div>
           <div class="mob__count">
-            {hud.value.units} units{mode.value === 'endless' ? ` · ${hud.value.kills} defeated` : ''}
+            {hud.value.troops} troops{mode.value === 'endless' ? ` · ${hud.value.dist} m` : ''}
           </div>
         </div>
       )}
@@ -337,13 +326,16 @@ export function MobGame() {
       {s === 'menu' && !glError.value && (
         <div class="mob__panel" role="dialog" aria-label="Mob">
           <h2>Level {p.level}</h2>
-          <p>{finePointer ? 'Move the mouse to aim.' : 'Drag to aim.'} Shoot through the good gates, avoid the red ones, and knock the tower down.</p>
+          <p>
+            {finePointer ? 'Move the mouse' : 'Drag'} to steer your crowd. Run through gates that grow it, dodge the bad ones and the
+            enemy squads you can't beat, then storm the base.
+          </p>
           <button class="btn btn--primary" onClick={() => start('level')}>
             Play level {p.level}
           </button>
           <div class="mob__row">
             <button class="btn btn--ghost" onClick={() => start('endless')}>
-              Endless{p.endlessBest ? ` · best ${p.endlessBest}` : ''}
+              Endless{p.endlessBest ? ` · best ${p.endlessBest} m` : ''}
             </button>
             <button class="btn btn--ghost" onClick={openShop}>
               Upgrades
@@ -356,7 +348,7 @@ export function MobGame() {
         <>
           <Confetti />
           <div class="mob__panel" role="dialog" aria-label="Level cleared">
-            <h2>Tower down!</h2>
+            <h2>Base taken!</h2>
             <p class="mob__reward">
               +{result.value.coins} <Coin size={24} />
             </p>
@@ -371,9 +363,9 @@ export function MobGame() {
       )}
 
       {s === 'lost' && (
-        <div class="mob__panel" role="dialog" aria-label="Base overrun">
-          <h2>Base overrun</h2>
-          <p>Upgrades help — try more fire rate or a head start.</p>
+        <div class="mob__panel" role="dialog" aria-label="Out of troops">
+          <h2>Out of troops</h2>
+          <p>Pick bigger gates, dodge squads you can't beat — or grab an upgrade.</p>
           {result.value.coins > 0 && <p class="mob__reward">
               +{result.value.coins} <Coin size={24} />
             </p>}
@@ -388,8 +380,8 @@ export function MobGame() {
 
       {s === 'over' && (
         <div class="mob__panel" role="dialog" aria-label="Endless over">
-          <h2>{result.value.best ? 'New best!' : 'Overrun'}</h2>
-          <p class="mob__score">{result.value.score} defeated</p>
+          <h2>{result.value.best ? 'New best!' : 'Out of troops'}</h2>
+          <p class="mob__score">{result.value.score} m</p>
           <p>
             Best {p.endlessBest} · +{result.value.coins} <Coin size={18} />
           </p>

@@ -29,7 +29,7 @@ test('level flow: steer, win, earn coins, buy an upgrade, lose, retry', async ({
   await page.getByRole('button', { name: 'Play level 1' }).click();
   await expect(page.locator('.mob__count')).toBeVisible();
 
-  // Dragging a finger right steers the cannon right (relative drag).
+  // Dragging a finger right steers the crowd right (relative drag).
   const box = (await page.locator('.mob__stage').boundingBox())!;
   await touchDrag(page, box.x + box.width / 2, box.x + box.width * 0.75, box.y + box.height * 0.7);
   const target = await page.evaluate(() => (window as unknown as { __mob: Hook }).__mob.world().targetX);
@@ -37,10 +37,10 @@ test('level flow: steer, win, earn coins, buy an upgrade, lose, retry', async ({
   await page.waitForTimeout(3000);
   await page.screenshot({ path: 'test-results/mob-02-play.png' });
 
-  // Fast-forward: aim down the middle and play until the tower falls.
+  // Fast-forward with a big crowd: run to the base and take it.
   await page.evaluate(() => {
     const m = (window as unknown as { __mob: Hook }).__mob;
-    m.world().targetX = 0;
+    m.world().troops = 500;
     m.run(200);
   });
   const won = page.getByRole('dialog', { name: 'Level cleared' });
@@ -51,23 +51,23 @@ test('level flow: steer, win, earn coins, buy an upgrade, lose, retry', async ({
   const coins = Number((await page.locator('.mob__coins').textContent())!.replace(/\D/g, ''));
   expect(coins).toBeGreaterThan(30);
 
-  // Shop: buy fire rate.
+  // Shop: buy a bigger starting crowd.
   await won.getByRole('button', { name: 'Upgrades' }).click();
   const shop = page.getByRole('dialog', { name: 'Upgrades' });
-  const fire = shop.locator('.mob__upgrade', { hasText: 'Fire rate' });
+  const fire = shop.locator('.mob__upgrade', { hasText: 'Bigger crowd' });
   await expect(fire).toContainText('Lv 0');
   await fire.getByRole('button').click();
   await expect(fire).toContainText('Lv 1');
   await page.screenshot({ path: 'test-results/mob-04-shop.png' });
   await shop.getByRole('button', { name: 'Done' }).click();
 
-  // Level 2, then get overrun.
+  // Level 2 starts with the upgrade's bigger crowd; then lose every troop.
   await page.getByRole('button', { name: 'Play level 2' }).click();
+  expect(await page.evaluate(() => (window as unknown as { __mob: Hook }).__mob.world().troops)).toBe(15);
   await page.evaluate(() => {
-    const w = (window as unknown as { __mob: Hook }).__mob.world();
-    w.enemies.add(0, 0.62, 25);
+    (window as unknown as { __mob: Hook }).__mob.world().troops = 0;
   });
-  const lost = page.getByRole('dialog', { name: 'Base overrun' });
+  const lost = page.getByRole('dialog', { name: 'Out of troops' });
   await expect(lost).toBeVisible();
   await lost.getByRole('button', { name: 'Try again' }).click();
   await expect(page.locator('.mob__count')).toBeVisible();
@@ -79,7 +79,9 @@ test('endless mode records a best score', async ({ page }) => {
   await openMob(page);
   await page.getByRole('button', { name: /Endless/ }).click();
   await page.evaluate(() => (window as unknown as { __mob: Hook }).__mob.run(20));
-  await page.evaluate(() => (window as unknown as { __mob: Hook }).__mob.world().enemies.add(0, 0.62, 25));
+  await page.evaluate(() => {
+    (window as unknown as { __mob: Hook }).__mob.world().troops = 0;
+  });
   const over = page.getByRole('dialog', { name: 'Endless over' });
   await expect(over).toBeVisible();
   await expect(over).toContainText('New best');
@@ -97,19 +99,19 @@ test('dark mode renders', async ({ page }) => {
   await page.screenshot({ path: 'test-results/mob-05-dark.png' });
 });
 
-test('steering follows the finger: drag right moves the cannon right on screen', async ({ page }) => {
+test('steering follows the finger: drag right moves the crowd right on screen', async ({ page }) => {
   await openMob(page);
   await page.getByRole('button', { name: 'Play level 1' }).click();
   const box = (await page.locator('.mob__stage').boundingBox())!;
   const y = box.y + box.height * 0.7;
-  const cannonScreenX = () =>
+  const crowdScreenX = () =>
     page.evaluate(() => {
       const m = (window as unknown as { __mob: Hook }).__mob;
-      return m.screenX(m.world().cannonX);
+      return m.screenX(m.world().crowdX);
     });
   const drag = async (fromFrac: number, toFrac: number) => {
     await touchDrag(page, box.x + box.width * fromFrac, box.x + box.width * toFrac, y);
-    await page.waitForTimeout(400); // cannon glides to the target
+    await page.waitForTimeout(400); // the crowd glides to the target
   };
 
   // +x in the sim is drawn on the right half of the screen.
@@ -118,12 +120,12 @@ test('steering follows the finger: drag right moves the cannon right on screen',
   expect(right).toBeGreaterThan(box.width / 2);
   expect(left).toBeLessThan(box.width / 2);
 
-  const start = await cannonScreenX();
+  const start = await crowdScreenX();
   await drag(0.5, 0.8);
-  const afterRight = await cannonScreenX();
+  const afterRight = await crowdScreenX();
   expect(afterRight).toBeGreaterThan(start + 40);
   await drag(0.8, 0.3);
-  const afterLeft = await cannonScreenX();
+  const afterLeft = await crowdScreenX();
   expect(afterLeft).toBeLessThan(start - 40);
 
   // Touch steering is relative: a drag that starts anywhere moves the aim by the
@@ -137,24 +139,24 @@ test('steering follows the finger: drag right moves the cannon right on screen',
 test.describe('desktop', () => {
   test.use({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
 
-  test('the cannon follows the mouse: hovering and press-and-drag', async ({ page }) => {
+  test('the crowd follows the mouse: hovering and press-and-drag', async ({ page }) => {
     await openMob(page);
-    await expect(page.getByRole('dialog', { name: 'Mob' })).toContainText('Move the mouse to aim');
+    await expect(page.getByRole('dialog', { name: 'Mob' })).toContainText('Move the mouse to steer');
     await page.getByRole('button', { name: 'Play level 1' }).click();
     await expect(page.locator('.mob__count')).toBeVisible();
     const box = (await page.locator('.mob__stage').boundingBox())!;
     const y = box.y + box.height * 0.6;
     const m = <T,>(fn: string) => page.evaluate(`(() => { const m = window.__mob; return ${fn}; })()`) as Promise<T>;
     const targetX = () => m<number>('m.world().targetX');
-    const cannonScreenX = () => m<number>('m.screenX(m.world().cannonX)');
+    const crowdScreenX = () => m<number>('m.screenX(m.world().crowdX)');
 
-    // Hover (no button): the cannon lines up under the pointer.
+    // Hover (no button): the crowd lines up under the pointer.
     const right = await m<number>('m.screenX(0.6)');
     await page.mouse.move(box.x + box.width / 2, y);
     await page.mouse.move(box.x + right, y, { steps: 6 });
     expect(await targetX()).toBeCloseTo(0.6, 1);
-    await page.waitForTimeout(400); // cannon glides to the target
-    expect(Math.abs((await cannonScreenX()) - right)).toBeLessThan(12);
+    await page.waitForTimeout(400); // the crowd glides to the target
+    expect(Math.abs((await crowdScreenX()) - right)).toBeLessThan(12);
 
     // Press and drag left: it follows the mouse the whole way.
     const left = await m<number>('m.screenX(-0.5)');
@@ -165,7 +167,7 @@ test.describe('desktop', () => {
     await page.mouse.up();
     expect(await targetX()).toBeCloseTo(-0.5, 1);
     await page.waitForTimeout(400);
-    expect(Math.abs((await cannonScreenX()) - left)).toBeLessThan(12);
+    expect(Math.abs((await crowdScreenX()) - left)).toBeLessThan(12);
 
     // Far past the lane edge clamps to the edge.
     await page.mouse.move(box.x + box.width - 2, y, { steps: 4 });

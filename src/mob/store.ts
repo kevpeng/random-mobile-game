@@ -12,9 +12,11 @@ export interface Progress {
 
 const KEY = 'mob:progress:v1';
 
-export const progress = signal<Progress>(
-  load(KEY, { level: 1, coins: 0, upgrades: { ...NO_UPGRADES }, endlessBest: 0 }),
-);
+const saved = load<Progress>(KEY, { level: 1, coins: 0, upgrades: { ...NO_UPGRADES }, endlessBest: 0 });
+// Keep only upgrades that still exist (older saves had a cannon's upgrades).
+const upgrades = { ...NO_UPGRADES };
+for (const k of Object.keys(NO_UPGRADES) as (keyof Upgrades)[]) upgrades[k] = Number(saved.upgrades?.[k]) || 0;
+export const progress = signal<Progress>({ ...saved, upgrades });
 effect(() => save(KEY, progress.value));
 
 export function addCoins(n: number): void {

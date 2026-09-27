@@ -1,5 +1,10 @@
 import { mulberry32 } from '../../shared/rng';
 
+// Crowd runner: your crowd runs up a lane (the track scrolls toward you).
+// Gates and enemy squads sit at fixed distances along the track; each gate
+// row changes your troop count by the panel you run through, each squad you
+// run into costs troops 1:1, and at the end the crowd charges the base.
+
 export type GateKind = 'mul' | 'add' | 'div' | 'sub';
 
 export interface PanelSpec {
@@ -10,172 +15,137 @@ export interface PanelSpec {
 }
 
 export interface GateRowSpec {
+  /** Distance along the track. */
   z: number;
   panels: PanelSpec[];
-  /** Optional motion: the whole row slides sideways (and drifts toward the cannon) over time. */
-  move?: GateMotion;
 }
 
-/**
- * How a gate row moves. Positions are a pure function of sim time and these
- * params (see gateShift), so seeded runs stay reproducible.
- */
-export interface GateMotion {
-  /** Sideways amplitude, in lane half-widths. */
-  ax: number;
-  /** How far the row drifts toward the cannon at the near end of its cycle (z units). */
-  az: number;
-  /** Seconds per side-to-side cycle. */
-  period: number;
-  /** Radians. */
-  phase: number;
-}
-
-/** Offset of a moving row at sim time `t`: dx across the lane, dz along it (≤ 0, toward the cannon). */
-export function gateShift(m: GateMotion | undefined, t: number): { dx: number; dz: number } {
-  if (!m) return { dx: 0, dz: 0 };
-  const a = (2 * Math.PI * t) / m.period + m.phase;
-  // The drift runs on a slower cycle than the sway, so the pattern doesn't repeat every sweep.
-  const b = (2 * Math.PI * t) / (m.period * 1.5) + m.phase;
-  return { dx: m.ax * Math.sin(a), dz: -m.az * (0.5 - 0.5 * Math.cos(b)) };
-}
-
-/**
- * Motion for gate row `r` on level `n`: none on level 1, then gently wider,
- * faster and deeper with each level (capped).
- */
-export function levelMotion(n: number, r: number): GateMotion | undefined {
-  if (n < 2) return undefined;
-  const k = n - 2;
-  return {
-    ax: Math.min(0.4, 0.06 + 0.025 * k),
-    az: Math.min(0.8, 0.06 * k),
-    period: Math.max(3.6, 7 - 0.25 * k),
-    phase: ((r * 2.4 + n * 0.9) % (2 * Math.PI)),
-  };
-}
-
-/**
- * Gives each row its level motion, narrowing the panels so the row stays
- * inside the lane over its whole sweep (the uncovered edge is a gate-free gap).
- */
-export function withMotion(n: number, rows: GateRowSpec[]): GateRowSpec[] {
-  return rows.map((row, r) => {
-    const move = levelMotion(n, r);
-    if (!move) return row;
-    const s = 1 - move.ax;
-    return { ...row, move, panels: row.panels.map((p) => ({ ...p, x0: p.x0 * s, x1: p.x1 * s })) };
-  });
-}
-
-export interface WaveSpec {
-  /** Seconds after the level starts. */
-  t: number;
+export interface SquadSpec {
+  /** Distance along the track. */
+  z: number;
+  /** Lane centre and half-width it blocks (half ≥ 1 blocks the whole lane). */
+  x: number;
+  half: number;
+  /** Enemies in the squad. */
   count: number;
-  /** Hit points per enemy (big enemies > 1). */
+  /** Hit points per enemy (brutes > 1). */
   hp: number;
-  /** Seconds over which the wave trickles in. */
-  over: number;
 }
 
 export interface LevelSpec {
-  length: number; // z of the enemy tower
+  /** Distance to the base (Infinity in endless mode). */
+  length: number;
   towerHp: number;
   gates: GateRowSpec[];
-  waves: WaveSpec[];
+  squads: SquadSpec[];
 }
 
 export const isGood = (k: GateKind) => k === 'mul' || k === 'add';
 export const gateLabel = (k: GateKind, n: number) =>
   k === 'mul' ? `×${n}` : k === 'add' ? `+${n}` : k === 'div' ? `÷${n}` : `−${n}`;
 
-const halves = (a: PanelSpec, b: PanelSpec): PanelSpec[] => [
-  { ...a, x0: -1, x1: 0 },
-  { ...b, x0: 0, x1: 1 },
-];
-const full = (p: Omit<PanelSpec, 'x0' | 'x1'>): PanelSpec[] => [{ ...p, x0: -1, x1: 1 }];
-const P = (kind: GateKind, n: number) => ({ kind, n, x0: 0, x1: 0 });
-
-/**
- * Output multiplier for a straight shot at lane position `x` (units don't turn
- * after they're fired). + gates add a flat number of units per second, worth
- * less as the stream grows.
- */
-export function columnMultiplier(rows: GateRowSpec[], x: number, baseRate = 4): number {
-  let mult = 1;
-  for (const r of [...rows].sort((a, b) => a.z - b.z)) {
-    const p = r.panels.find((p) => x >= p.x0 && x <= p.x1);
-    if (!p) continue;
-    mult *= p.kind === 'mul' ? p.n : p.kind === 'add' ? 1 + p.n / (baseRate * mult) : p.kind === 'div' ? 1 / p.n : 0.8;
+/** Troops after running through a gate panel. */
+export function applyPanel(troops: number, p: { kind: GateKind; n: number }): number {
+  switch (p.kind) {
+    case 'mul':
+      return troops * p.n;
+    case 'add':
+      return troops + p.n;
+    case 'sub':
+      return Math.max(0, troops - p.n);
+    case 'div':
+      return Math.floor(troops / p.n);
   }
-  return mult;
 }
 
-/** The best straight-line column through a layout: its lane position and multiplier. */
-export function bestColumn(rows: GateRowSpec[]): { x: number; mult: number } {
-  let best = { x: 0, mult: -1 };
-  for (let k = 0; k <= 40; k++) {
-    const x = -0.95 + (k * 1.9) / 40;
-    const mult = columnMultiplier(rows, x);
-    // Prefer the column nearest the centre of its panels on ties.
-    if (mult > best.mult + 1e-9 || (Math.abs(mult - best.mult) < 1e-9 && Math.abs(x) < Math.abs(best.x))) best = { x, mult };
+/** Crowd formation spacing (world units) and the most troops drawn (the count can go far higher). */
+export const CROWD_SPACING = 0.062;
+export const CROWD_SHOWN = 220;
+
+/** Half-width (lane units) of a crowd of `troops`, as laid out on screen (the lane is 1.9 units per side). */
+export const crowdHalf = (troops: number) => 0.04 + (CROWD_SPACING * Math.sqrt(Math.min(troops, CROWD_SHOWN))) / 1.9;
+
+/** Whether a crowd centred at x runs into squad s. */
+export const hitsSquad = (x: number, troops: number, s: { x: number; half: number }) =>
+  Math.abs(x - s.x) < s.half + crowdHalf(troops);
+
+/** Lane positions worth considering when choosing a line (none sits exactly on a panel edge). */
+export const LINES = Array.from({ length: 24 }, (_, k) => -0.92 + ((k + 0.5) * 1.84) / 24);
+
+/**
+ * Troops left after holding lane position x through `squads` and then `row`
+ * (either may be empty). -1 if the crowd is wiped out.
+ */
+export function throughSegment(troops: number, x: number, squads: SquadSpec[], row?: GateRowSpec): number {
+  let t = troops;
+  for (const s of squads) {
+    if (!hitsSquad(x, t, s)) continue;
+    t -= s.count * s.hp;
+    if (t <= 0) return -1;
+  }
+  if (row) {
+    const p = row.panels.find((p) => x >= p.x0 && x <= p.x1);
+    if (p) t = applyPanel(t, p);
+  }
+  return t <= 0 ? -1 : t;
+}
+
+/** Best line through a segment: every effect is monotone in troops, so maximising now is optimal. */
+export function bestLine(troops: number, squads: SquadSpec[], row?: GateRowSpec): { x: number; troops: number } {
+  let best = { x: 0, troops: -Infinity };
+  for (const x of LINES) {
+    const t = throughSegment(troops, x, squads, row);
+    if (t > best.troops + 1e-9 || (Math.abs(t - best.troops) < 1e-9 && Math.abs(x) < Math.abs(best.x))) best = { x, troops: t };
   }
   return best;
 }
 
-export const bestMultiplier = (rows: GateRowSpec[]) => bestColumn(rows).mult;
-
-/**
- * Enemy pressure for level n: the tower releases a burst every 6 s (bigger each
- * level), with brutes (big hp) every 12 s from level 3 on. Between bursts your
- * surplus gets through to the tower. `power` (the layout's best multiplier)
- * scales it so every layout is a fight. Levels last until the tower falls.
- */
-export function levelWaves(n: number, power = 2, minutes = 5): WaveSpec[] {
-  const scale = Math.pow(power / 2, 0.7);
-  const secs = minutes * 60;
-  const burst = Math.round((7 + 3.2 * (n - 1)) * scale);
-  const waves: WaveSpec[] = [];
-  for (let t = 3; t < secs; t += 6) waves.push({ t, count: burst, hp: 1, over: 1.6 });
-  if (n >= 3) {
-    for (let t = 9; t < secs; t += 12) {
-      waves.push({ t, count: 1 + Math.floor(n / 5), hp: Math.round((5 + 2.5 * n) * scale), over: 0.6 });
-    }
+/** Troops a perfect run reaches the base with (-1 if the level can't be survived). */
+export function bestFinish(spec: LevelSpec, start: number): number {
+  let t = start;
+  const rows = [...spec.gates].sort((a, b) => a.z - b.z);
+  const squads = [...spec.squads].sort((a, b) => a.z - b.z);
+  let si = 0;
+  for (const row of [...rows, undefined]) {
+    const upTo = row ? row.z : Infinity;
+    const seg: SquadSpec[] = [];
+    while (si < squads.length && squads[si].z < upTo) seg.push(squads[si++]);
+    t = bestLine(t, seg, row).troops;
+    if (t <= 0) return -1;
   }
-  return waves;
+  return t;
 }
 
-/** Tower hit points for level n with a layout of the given power (tuned with the balance bot). */
-export const towerHp = (n: number, power = 2) => Math.round(105 * Math.pow(1.2, n - 1) * power);
+export const START_TROOPS = 10;
+/** Share of a perfect run's troops the base needs to fall (leaves room for mistakes). */
+const TOWER_SHARE = 0.6;
 
-/** Fills in a level's tower and waves from its gate layout. */
-function finish(n: number, length: number, rows: GateRowSpec[]): LevelSpec {
-  const gates = withMotion(n, rows);
-  const power = bestMultiplier(gates);
-  return { length, gates, towerHp: towerHp(n, power), waves: levelWaves(n, power) };
+const halves = (a: PanelSpec, b: PanelSpec): PanelSpec[] => [
+  { ...a, x0: -1, x1: 0 },
+  { ...b, x0: 0, x1: 1 },
+];
+const P = (kind: GateKind, n: number): PanelSpec => ({ kind, n, x0: 0, x1: 0 });
+const wall = (z: number, count: number, hp = 1): SquadSpec => ({ z, x: 0, half: 1.2, count, hp });
+
+function finish(length: number, gates: GateRowSpec[], squads: SquadSpec[]): LevelSpec {
+  const spec = { length, gates, squads, towerHp: 0 };
+  spec.towerHp = Math.max(8, Math.round(bestFinish(spec, START_TROOPS) * TOWER_SHARE));
+  return spec;
 }
 
 /** Hand-tuned opening levels (1-based index = level number). */
 const HANDMADE: LevelSpec[] = [
-  // 1: learn that ×2 beats +3
-  finish(1, 16, [{ z: 5, panels: halves(P('mul', 2), P('add', 3)) }]),
-  // 2: first bad gates
-  finish(2, 16, [
-    { z: 4, panels: halves(P('add', 5), P('div', 2)) },
-    { z: 8, panels: halves(P('sub', 10), P('mul', 2)) },
-  ]),
-  // 3: three-way choice, first brutes
-  finish(3, 17, [
-    {
-      z: 5,
-      panels: [
-        { kind: 'add', n: 4, x0: -1, x1: -0.33 },
-        { kind: 'mul', n: 3, x0: -0.33, x1: 0.33 },
-        { kind: 'sub', n: 8, x0: 0.33, x1: 1 },
-      ],
-    },
-    { z: 10, panels: halves(P('mul', 2), P('add', 10)) },
-  ]),
+  // 1: ×2 beats +3; then dodge the −
+  finish(34, [
+    { z: 10, panels: halves(P('mul', 2), P('add', 3)) },
+    { z: 18, panels: halves(P('add', 10), P('sub', 10)) },
+  ], [wall(25, 8)]),
+  // 2: first ÷, and a squad guarding the best gate
+  finish(44, [
+    { z: 10, panels: halves(P('add', 5), P('div', 2)) },
+    { z: 19, panels: halves(P('sub', 10), P('mul', 2)) },
+    { z: 28, panels: halves(P('mul', 3), P('add', 15)) },
+  ], [wall(15, 6), { z: 25, x: -0.5, half: 0.5, count: 12, hp: 1 }, wall(35, 15)]),
 ];
 
 /** Level `n` (1-based): hand-made first, then procedurally generated. */
@@ -184,48 +154,107 @@ export function levelSpec(n: number): LevelSpec {
   return generateLevel(n, n * 7919);
 }
 
-export function generateLevel(n: number, seed: number): LevelSpec {
-  const rand = mulberry32(seed);
+interface Chunk {
+  gates: GateRowSpec[];
+  squads: SquadSpec[];
+}
+
+/**
+ * One stretch of track starting at `z0`: a squad, then a gate row (sometimes
+ * with a squad guarding its best panel). `troops` is what a strong run would
+ * have here; squad sizes scale with it (by `pressure`) so every stretch bites.
+ */
+function chunk(rand: () => number, z0: number, troops: number, pressure: number, n: number): Chunk & { troops: number } {
   const pick = <T,>(xs: T[]) => xs[Math.floor(rand() * xs.length)];
-  const length = 17 + Math.min(5, Math.floor(n / 4));
-  const rows = 2 + Math.min(2, Math.floor(n / 5));
-  const gates: GateRowSpec[] = [];
-  for (let r = 0; r < rows; r++) {
-    const z = 3.5 + (r * (length - 8)) / rows;
-    const good = (): PanelSpec => (rand() < 0.55 ? P('mul', pick([2, 2, 3])) : P('add', pick([5, 8, 10, 15])));
-    const bad = (): PanelSpec => (rand() < 0.5 ? P('div', 2) : P('sub', pick([5, 10, 15])));
-    const layout = rand();
-    if (layout < 0.55) {
-      const [a, b] = rand() < 0.5 ? [good(), bad()] : [bad(), good()];
-      gates.push({ z, panels: halves(a, b) });
-    } else if (layout < 0.85) {
-      gates.push({ z, panels: halves(good(), good()) });
-    } else {
-      const ps = [good(), bad(), good()];
-      gates.push({
-        z,
-        panels: ps.map((p, i) => ({ ...p, x0: -1 + (i * 2) / 3, x1: -1 + ((i + 1) * 2) / 3 })),
-      });
-    }
+  const mulN = () => (rand() < Math.min(0.35, 0.05 * n) ? 3 : 2);
+  const addN = () => pick([5, 8, 10, 15, 20]) + Math.floor(n / 2) * 5;
+  const good = (): PanelSpec => (rand() < 0.5 ? P('mul', mulN()) : P('add', addN()));
+  const bad = (): PanelSpec => (rand() < 0.45 ? P('div', 2) : P('sub', pick([5, 10, 15, 20]) + n * 2));
+  const squads: SquadSpec[] = [];
+  let t = troops;
+
+  const wallCount = Math.max(3, Math.round(t * pressure * (0.7 + rand() * 0.6)));
+  if (rand() < 0.3 + 0.03 * n) {
+    // A brute squad: fewer, tougher enemies.
+    const hp = 3 + Math.floor(n / 3);
+    squads.push(wall(z0, Math.max(1, Math.floor(wallCount / hp)), hp));
+  } else squads.push(wall(z0, wallCount));
+  t = bestLine(t, squads).troops;
+
+  const z = z0 + 5;
+  let panels: PanelSpec[];
+  const layout = rand();
+  if (layout < 0.55) panels = rand() < 0.5 ? halves(good(), bad()) : halves(bad(), good());
+  else if (layout < 0.8) panels = halves(good(), good());
+  else {
+    const ps = [good(), bad(), good()];
+    panels = ps.map((p, i) => ({ ...p, x0: -1 + (i * 2) / 3, x1: -1 + ((i + 1) * 2) / 3 }));
   }
-  return finish(n, length, gates);
+  const row = { z, panels };
+  const guard: SquadSpec[] = [];
+  if (n >= 3 && rand() < 0.45) {
+    // Guard the best panel: worth fighting for, or dodge to the next best.
+    const top = bestLine(t, [], row);
+    const p = panels.find((p) => top.x >= p.x0 && top.x <= p.x1)!;
+    guard.push({ z: z - 1.6, x: (p.x0 + p.x1) / 2, half: (p.x1 - p.x0) / 2 - 0.08, count: Math.max(3, Math.round(t * pressure * 0.8)), hp: 1 });
+  }
+  squads.push(...guard);
+  // The crowd holds one line through the whole stretch (wall, guard and row).
+  t = bestLine(troops, squads, row).troops;
+  return { gates: [row], squads, troops: t };
 }
 
-/** Endless mode: a fixed gate layout; waves come from endlessWave(). */
-export function endlessSpec(seed: number): LevelSpec {
-  const base = generateLevel(8, seed);
-  return { ...base, length: 20, towerHp: Infinity, waves: [] };
+export function generateLevel(n: number, seed: number): LevelSpec {
+  // Rarely a layout can't be survived even with perfect play; deal another.
+  for (let k = 0; ; k++) {
+    const spec = layLevel(n, seed + k * 104729);
+    if (bestFinish(spec, START_TROOPS) > spec.towerHp) return spec;
+  }
 }
 
-/** Endless wave `w` (0-based), starting at time 3 + 7w, ever larger. */
-export function endlessWave(w: number): WaveSpec {
-  const big = w % 4 === 3;
+function layLevel(n: number, seed: number): LevelSpec {
+  const rand = mulberry32(seed);
+  const stretches = 3 + Math.min(4, Math.floor(n / 3));
+  // Below ~0.5 the right choices (×2) still grow the crowd each stretch.
+  const pressure = Math.min(0.45, 0.25 + 0.015 * n);
+  const gates: GateRowSpec[] = [];
+  const squads: SquadSpec[] = [];
+  let t = START_TROOPS;
+  let z = 10;
+  // Open with a free gate row so there's something to spend on the first squad.
+  gates.push({ z: 8, panels: halves(P('add', 5 + n), P('mul', 2)) });
+  t = bestLine(t, [], gates[0]).troops;
+  for (let k = 0; k < stretches; k++) {
+    z += 4;
+    const c = chunk(rand, z, t, pressure, n);
+    gates.push(...c.gates);
+    squads.push(...c.squads);
+    t = c.troops;
+    z += 5;
+  }
+  squads.push(wall(z + 5, Math.max(4, Math.round(t * pressure * 0.6))));
+  return finish(z + 13, gates, squads);
+}
+
+/**
+ * Endless mode: stretches keep coming, with squads that grow relative to the
+ * crowd the longer you last. `k` is the stretch number; `troops` your current count.
+ */
+export function endlessChunk(seed: number, k: number, z0: number, troops: number): Chunk {
+  const rand = mulberry32(seed * 31 + k * 7919);
+  const pressure = Math.min(0.9, 0.3 + 0.04 * k); // past ~0.5 the crowd can't keep up
+  const c = chunk(rand, z0, Math.max(troops, 10 + 6 * k), pressure, 3 + Math.floor(k / 2));
+  return { gates: c.gates, squads: c.squads };
+}
+
+/** Track length of one endless stretch. */
+export const ENDLESS_STRETCH = 9;
+
+export function endlessSpec(): LevelSpec {
   return {
-    t: 3 + w * 7,
-    count: big ? 3 + Math.floor(w / 2) : 14 + w * 4,
-    hp: big ? 6 + Math.floor(w / 2) : 1,
-    over: big ? 2 : 4,
+    length: Infinity,
+    towerHp: Infinity,
+    gates: [{ z: 8, panels: halves(P('add', 10), P('mul', 2)) }],
+    squads: [],
   };
 }
-
-export { full };

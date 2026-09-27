@@ -3,10 +3,9 @@ import type { Upgrades } from './world';
 export type UpgradeKey = keyof Upgrades;
 
 export const UPGRADES: { key: UpgradeKey; name: string; blurb: string; base: number; max: number }[] = [
-  { key: 'fire', name: 'Fire rate', blurb: 'Shoot faster', base: 30, max: 12 },
-  { key: 'shot', name: 'Double shot', blurb: 'More units per shot', base: 60, max: 6 },
-  { key: 'champ', name: 'Champions', blurb: 'Big units more often', base: 45, max: 6 },
-  { key: 'boost', name: 'Head start', blurb: 'Free multiplier gate', base: 120, max: 3 },
+  { key: 'troops', name: 'Bigger crowd', blurb: '+5 troops at the start', base: 30, max: 12 },
+  { key: 'rally', name: 'Rally', blurb: 'Recruits join as you run', base: 50, max: 6 },
+  { key: 'boost', name: 'Head start', blurb: 'Free multiplier at the start line', base: 120, max: 3 },
 ];
 
 export function upgradeCost(key: UpgradeKey, level: number): number {
@@ -16,8 +15,8 @@ export function upgradeCost(key: UpgradeKey, level: number): number {
 
 export const canUpgrade = (u: Upgrades, key: UpgradeKey) => u[key] < UPGRADES.find((x) => x.key === key)!.max;
 
-/** Coins for beating level `n`; a small bonus for base health left. */
-export const winCoins = (n: number, baseLeft: number) => 20 + 8 * n + baseLeft;
+/** Coins for beating level `n`; a bonus for troops left over. */
+export const winCoins = (n: number, troopsLeft: number) => 20 + 8 * n + Math.min(60, Math.floor(troopsLeft / 2));
 
 /** Consolation for a loss: a share of the damage dealt, so progress never stalls. */
 export const lossCoins = (n: number, towerDamageShare: number) => Math.floor((10 + 4 * n) * towerDamageShare);
