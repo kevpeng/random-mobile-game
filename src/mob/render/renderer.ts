@@ -1,5 +1,8 @@
 import { isGood } from '../sim/levels';
-import { radius, TOWER_HALF, type World } from '../sim/world';
+import { radius, type World } from '../sim/world';
+
+/** Half-width of the enemy base (lane units), for the no-art fallback box. */
+const TOWER_HALF = 0.5;
 import atlas from './atlas.json';
 import { lookAt, multiply, perspective, project, type Mat4 } from './math';
 
@@ -17,10 +20,7 @@ const UNIT_VIS = 1.45;
 /** Champions and brutes are already big; they get less of a boost. */
 const BIG_VIS = 1.1;
 /** World width of the cannon's footprint and of the castle's walls. */
-const CANNON_W = 0.95;
 const TOWER_W = 2.0;
-const CANNON_ANCHOR_Z = 0.02;
-const RECOIL_MS = 70;
 
 const MESH_VS = `#version 300 es
 in vec3 a_pos; in vec4 a_color;
@@ -282,8 +282,6 @@ export class Renderer {
   /** Textures, once loaded. Until then (or if loading fails) the plain ball/box look is drawn. */
   private art: Art | null = null;
   private alphaToCoverage: boolean;
-  private lastShots = -1;
-  private recoilUntil = 0;
   pal: Palette = LIGHT;
   vp: Mat4 = new Float32Array(16);
   width = 1;
@@ -518,29 +516,31 @@ export class Renderer {
     gl.clearColor(pal.sky[0], pal.sky[1], pal.sky[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // Cannon recoil: the sim counts shots, so a change means it just fired.
-    const now = performance.now();
-    if (w.shots !== this.lastShots) {
-      if (w.shots > this.lastShots && this.lastShots >= 0) this.recoilUntil = now + RECOIL_MS;
-      this.lastShots = w.shots;
-    }
+    // The track scrolls toward the camera as the crowd runs: texture coordinates move with it.
+    const sc = w.scroll;
 
     // ---- static-ish meshes: ground, lane, tower, cannon (opaque) ----
     this.verts.length = 0;
     this.tverts.length = 0;
     const L = w.length;
     const zFar = L + 3;
+    // The base comes into view as you near it.
+    const TZ = w.towerZ;
+    const showTower = !w.endless && TZ < zFar + 2;
     if (art) {
       // Grass: tiles come out roughly square on screen despite the depth squash.
       const gs = 2.4, gz = gs / DEPTH, X0 = -8, X1 = 8, Z0 = -4, Z1 = zFar + 8;
       // (v runs against z so the texture's "up" points up the screen)
-      this.tquad([X0, -0.01, Z0, X0 / gs, -Z0 / gz], [X1, -0.01, Z0, X1 / gs, -Z0 / gz], [X1, -0.01, Z1, X1 / gs, -Z1 / gz], [X0, -0.01, Z1, X0 / gs, -Z1 / gz], pal.grassTint);
+      this.tquad([X0, -0.01, Z0, X0 / gs, -(Z0 + sc) / gz], [X1, -0.01, Z0, X1 / gs, -(Z0 + sc) / gz], [X1, -0.01, Z1, X1 / gs, -(Z1 + sc) / gz], [X0, -0.01, Z1, X0 / gs, -(Z1 + sc) / gz], pal.grassTint);
       // Lane: u across the lane (curbs at both edges), v repeats every 2 world units (2 bands).
-      this.tquad([-LANE, 0, -2, 0, -1], [LANE, 0, -2, 1, -1], [LANE, 0, zFar, 1, zFar / 2], [-LANE, 0, zFar, 0, zFar / 2], pal.laneTint);
+      const v0 = (-2 + sc) / 2, v1 = (zFar + sc) / 2;
+      this.tquad([-LANE, 0, -2, 0, v0], [LANE, 0, -2, 1, v0], [LANE, 0, zFar, 1, v1], [-LANE, 0, zFar, 0, v1], pal.laneTint);
     } else {
       this.quad([-8, -0.01, -4], [8, -0.01, -4], [8, -0.01, zFar + 8], [-8, -0.01, zFar + 8], pal.grass);
-      for (let z = -2, k = 0; z < zFar; z += 1, k++) {
-        this.quad([-LANE, 0, z], [LANE, 0, z], [LANE, 0, z + 1], [-LANE, 0, z + 1], k % 2 ? pal.laneAlt : pal.lane);
+      for (let k = Math.floor(sc) - 2; k - sc < zFar; k++) {
+        const z0 = Math.max(-2, k - sc), z1 = k + 1 - sc;
+        if (z1 <= -2) continue;
+        this.quad([-LANE, 0, z0], [LANE, 0, z0], [LANE, 0, z1], [-LANE, 0, z1], k & 1 ? pal.laneAlt : pal.lane);
       }
     }
     const e = 0.07;
@@ -549,11 +549,10 @@ export class Renderer {
     // (the sim stops stepping once the level ends, so a final hit would otherwise flash forever)
     const hit = w.towerFlash < 0.08 && w.state === 'playing';
     const towerShake = w.towerFlash < 0.25 ? Math.sin(w.towerFlash * 90) * 0.04 * (1 - w.towerFlash / 0.25) : 0;
-    const cx = w.cannonX * LANE;
     const knobs: { x: number; z: number; c: RGB }[] = [];
     if (art) {
       for (const g of w.gates) {
-        if (g.broken) continue;
+        if (g.broken || g.z < -2 || g.z > zFar) continue;
         const good = isGood(g.kind);
         const col = good ? pal.good : pal.bad;
         const x0 = g.x0 * LANE + 0.03, x1 = g.x1 * LANE - 0.03;
@@ -562,21 +561,19 @@ export class Renderer {
         knobs.push({ x: x0, z: g.z, c: kc }, { x: x1, z: g.z, c: kc });
       }
     } else {
-      if (!w.endless) {
+      if (showTower) {
         const face = hit ? (pal.tower.map((c) => c + (1 - c) * 0.45) as RGB) : pal.tower;
-        this.box(towerShake, L + 0.2, TOWER_HALF * 2 * LANE, 1.5, 0.9, pal.towerSide, pal.towerSide, face);
+        this.box(towerShake, TZ + 0.2, TOWER_HALF * 2 * LANE, 1.5, 0.9, pal.towerSide, pal.towerSide, face);
         // Battlements
-        for (let i = -2; i <= 2; i++) this.box(towerShake + i * 0.3, L - 0.1, 0.18, 1.72, 0.3, pal.towerSide, pal.towerSide, face);
+        for (let i = -2; i <= 2; i++) this.box(towerShake + i * 0.3, TZ - 0.1, 0.18, 1.72, 0.3, pal.towerSide, pal.towerSide, face);
       }
-      this.box(cx, 0.05, 0.42, 0.22, 0.42, pal.cannon, pal.cannon, pal.cannon);
-      this.box(cx, 0.32, 0.14, 0.16, 0.5, pal.cannon, pal.cannon, pal.cannon);
     }
     const opaque = this.verts.length;
 
     // ---- gates (translucent, drawn after opaque) ----
     const groundVerts = this.tverts.length;
     for (const g of w.gates) {
-      if (g.broken) continue;
+      if (g.broken || g.z < -2 || g.z > zFar) continue;
       const col = isGood(g.kind) ? pal.good : pal.bad;
       const pulse = g.flash < 0.15 ? 0.25 * (1 - g.flash / 0.15) : 0;
       const dim = g.cool > 0 ? 0.45 : 1;
@@ -653,10 +650,7 @@ export class Renderer {
         const bob = flat ? 0 : Math.abs(Math.sin(en.age[i] * 12 + i)) * 0.03;
         put(en.x[i] * LANE, flat ? 0.01 : r + bob, en.z[i], r, en.hp[i] > 1 ? pal.brute : pal.enemy);
       }
-      if (flat && art) {
-        put(cx, 0.01, CANNON_ANCHOR_Z + 0.1, CANNON_W * 0.6, pal.player);
-        if (!w.endless) put(towerShake, 0.01, L + 0.3, TOWER_W * 0.6, pal.enemy);
-      }
+      if (flat && art && showTower) put(towerShake, 0.01, TZ + 0.3, TOWER_W * 0.6, pal.enemy);
       return n;
     };
 
@@ -684,8 +678,8 @@ export class Renderer {
     }
 
     this.towerTop = null;
-    if (art) this.drawSprites(w, art.atlas, view, proj, now, towerShake, hit);
-    else if (!w.endless) this.towerTop = this.toScreen(0, 2.05, L);
+    if (art) this.drawSprites(w, art.atlas, view, proj, towerShake, hit, showTower);
+    else if (showTower) this.towerTop = this.toScreen(0, 2.05, TZ);
 
     // Gates: translucent, depth-tested against units but not writing depth.
     gl.enable(gl.BLEND);
@@ -721,7 +715,7 @@ export class Renderer {
   }
 
   /** Units, cannon and castle from the atlas: one instanced, alpha-tested draw. */
-  private drawSprites(w: World, tex: WebGLTexture, view: Mat4, proj: Mat4, now: number, towerShake: number, hit: boolean): void {
+  private drawSprites(w: World, tex: WebGLTexture, view: Mat4, proj: Mat4, towerShake: number, hit: boolean, showTower: boolean): void {
     const gl = this.gl;
     const f = this.spriteInst;
     let n = 0;
@@ -742,11 +736,10 @@ export class Renderer {
       const frame = (big ? SHEET.brute : SHEET.enemy) + ((Math.floor(en.age[i] * (big ? 7 : 9)) + i) & 3);
       put(en.x[i] * LANE, 0, en.z[i], size, frame);
     }
-    put(w.cannonX * LANE, 0, CANNON_ANCHOR_Z, CANNON_W, SHEET.cannon + (now < this.recoilUntil ? 1 : 0));
-    if (!w.endless) {
+    if (showTower) {
       const frac = w.towerHp / w.towerMax;
       const state = frac > 0.66 ? 0 : frac > 0.33 ? 1 : 2;
-      const tz = w.length + 0.2;
+      const tz = w.towerZ + 0.2;
       put(towerShake, 0, tz, TOWER_W, SHEET.tower + state, hit ? 0.45 : 0);
       // The health bar goes just above the roof tips: the anchor in view space, raised along
       // the view's up axis (as the sprite is), projected to CSS pixels.

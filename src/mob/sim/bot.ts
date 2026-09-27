@@ -1,65 +1,30 @@
-import { columnMultiplier, gateShift, type GateRowSpec } from './levels';
-import { CANNON_Z, TOWER_HALF, UNIT_SPEED, World } from './world';
-
-/** Rough delay (s) between setting targetX and the cannon getting there. */
-const CANNON_LAG = 0.08;
-/** Units fired outside the tower footprint still fight, but never hit the tower. */
-const OFF_TOWER = 0.3;
+import { bestLine, type GateRowSpec, type SquadSpec } from './levels';
+import { CROWD_Z, World } from './world';
 
 /**
- * Gate rows as a shot fired now would meet them: each row where it will be
- * when the shot reaches it (gates move; units fly straight).
+ * The next choice ahead of the crowd: squads still to come before the next
+ * gate row, and that row (or, after the last row, the squads before the base).
  */
-export function predictedRows(w: World, lead = CANNON_LAG): GateRowSpec[] {
+export function nextSegment(w: World): { squads: SquadSpec[]; row?: GateRowSpec } {
   const rows = new Map<number, GateRowSpec>();
   for (const g of w.gates) {
-    if (g.broken) continue;
-    // Arrival time at the row: start from its current depth, refine once for its drift.
-    let t = w.time + lead + (g.z - CANNON_Z) / UNIT_SPEED;
-    let s = gateShift(g.move, t);
-    t = w.time + lead + (g.bz + s.dz - CANNON_Z) / UNIT_SPEED;
-    s = gateShift(g.move, t);
-    const r = rows.get(g.row) ?? { z: g.bz + s.dz, panels: [] };
-    r.panels.push({ kind: g.kind, n: g.n, x0: g.bx0 + s.dx, x1: g.bx1 + s.dx });
+    if (g.passed) continue;
+    const r = rows.get(g.row) ?? { z: g.z, panels: [] };
+    r.panels.push({ kind: g.kind, n: g.n, x0: g.x0, x1: g.x1 });
     rows.set(g.row, r);
   }
-  return [...rows.values()];
+  const row = [...rows.values()].sort((a, b) => a.z - b.z)[0];
+  const upTo = row ? row.z : Infinity;
+  const squads = w.squads
+    .filter((s) => !s.done && s.z + s.depth >= CROWD_Z - 0.2 && s.z < upTo)
+    .map((s) => ({ z: s.z, x: s.x, half: s.half, count: s.left, hp: 1 }));
+  return { squads, row };
 }
 
-/**
- * A simple steering policy used to check that levels are winnable: aim the
- * straight-line column that gets the most units through the gates as they
- * will be when the shot arrives, preferring columns that then go on to hit
- * the tower (units can't turn after they're fired).
- */
+/** Steers for the most troops through the next segment (optimal: every effect is monotone in troops). */
 export function botSteer(w: World): void {
-  const rows = predictedRows(w);
-  const N = 48;
-  const xs: number[] = [];
-  const scores: number[] = [];
-  for (let k = 0; k <= N; k++) {
-    const x = -0.95 + (k * 1.9) / N;
-    const onTower = w.endless || Math.abs(x) <= TOWER_HALF - 0.06;
-    xs.push(x);
-    scores.push(columnMultiplier(rows, x) * (onTower ? 1 : OFF_TOWER));
-  }
-  const top = Math.max(...scores);
-  // Aim at the middle of the widest run of best columns: the safest spot
-  // while the gates slide (ties go to the run nearest the centre).
-  let best = { x: 0, len: -1 };
-  for (let k = 0; k <= N; ) {
-    if (scores[k] < top - 1e-9) {
-      k++;
-      continue;
-    }
-    let e = k;
-    while (e + 1 <= N && scores[e + 1] >= top - 1e-9) e++;
-    const x = (xs[k] + xs[e]) / 2;
-    const len = e - k;
-    if (len > best.len || (len === best.len && Math.abs(x) < Math.abs(best.x))) best = { x, len };
-    k = e + 1;
-  }
-  w.targetX = best.x;
+  const { squads, row } = nextSegment(w);
+  w.targetX = bestLine(w.troops, squads, row).x;
 }
 
 /** Plays a level headlessly with the bot; returns the outcome. */
