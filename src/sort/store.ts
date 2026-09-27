@@ -10,6 +10,7 @@ import {
   isComplete,
   isSolved,
   moveCount,
+  trappedInLoop,
   analyze,
   type Analysis,
   type Move,
@@ -66,9 +67,21 @@ export const outOfMoves = computed(
   () => !!puzzle.value && !won.value && !hasUsefulMove(colorStacks.value, puzzle.value.config.height),
 );
 
-/** Why the game can't go on: no legal move at all, or moves that all lead nowhere. */
-export const stuck = computed<'no-moves' | 'dead-end' | null>(() =>
-  outOfMoves.value ? 'no-moves' : deadEnd.value && !won.value ? 'dead-end' : null,
+/** True when the only moves left shuffle the same balls back and forth (e.g. one ball between two tubes). */
+export const inLoop = computed(
+  () =>
+    !!puzzle.value &&
+    !won.value &&
+    !outOfMoves.value &&
+    trappedInLoop(colorStacks.value, puzzle.value.config.height),
+);
+
+/**
+ * Why the game can't go on: no legal move at all, moves that only go in
+ * circles, or moves that all lead nowhere (proven by the worker's search).
+ */
+export const stuck = computed<'no-moves' | 'loop' | 'dead-end' | null>(() =>
+  outOfMoves.value ? 'no-moves' : inLoop.value ? 'loop' : deadEnd.value && !won.value ? 'dead-end' : null,
 );
 
 // --- worker -------------------------------------------------------------------
@@ -196,7 +209,7 @@ export function tapStack(i: number): TapResult {
     });
     return 'win';
   }
-  if (outOfMoves.value) return 'stuck';
+  if (outOfMoves.value || inLoop.value) return 'stuck';
   return isComplete(after[i], cap) ? 'complete' : 'move';
 }
 
@@ -240,7 +253,14 @@ export async function hint(): Promise<void> {
   if (token !== hintToken || colorStacks.value !== cs) return; // board changed meanwhile
   batch(() => {
     selected.value = null;
-    if (a.path && a.path.length) hintMove.value = a.path[0];
+    if (a.path && a.path.length) {
+      // Point one way: lift the ball(s) out of the source, like a tap would, and
+      // pulse only the destination. (Lighting both tubes alike hid the direction,
+      // so a wrong-way move then "undoing" it looked like the hint's only move.)
+      const [from] = a.path[0];
+      hintMove.value = a.path[0];
+      selected.value = from;
+    }
     else if (a.complete) deadEnd.value = true;
     else hintMove.value = 'none';
   });
@@ -263,7 +283,7 @@ function watchForDeadEnd(): void {
     clearTimeout(watchTimer);
     deadEnd.value = false;
     rescueBack.value = null;
-    if (!p || won.peek() || !hasHistory || outOfMoves.peek()) return;
+    if (!p || won.peek() || !hasHistory || outOfMoves.peek() || inLoop.peek()) return;
     watchTimer = setTimeout(() => {
       if (token !== watchToken) return;
       void analyzeIn(cs, p.config.height).then((a) => {
@@ -309,7 +329,7 @@ export function restoreOrStart(): void {
       won.value = saved.won;
     });
     timer.reset(saved.elapsed);
-    if (!saved.won && saved.moves > 0 && !outOfMoves.value) timer.startWhenShown();
+    if (!saved.won && saved.moves > 0 && !stuck.value) timer.startWhenShown();
     prefetch(saved.puzzle.config);
   } else {
     void newGame();
