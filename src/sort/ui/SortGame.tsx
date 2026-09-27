@@ -1,5 +1,6 @@
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
+import { GoBackButton } from '../../shared/GoBackButton';
 import { BackButton } from '../../shared/BackButton';
 import { Confetti } from '../../shared/Confetti';
 import { haptic } from '../../shared/haptics';
@@ -20,6 +21,8 @@ import {
   moves,
   newBest,
   newGame,
+  previous,
+  goBack,
   puzzle,
   rescueBack,
   restart,
@@ -127,7 +130,11 @@ export function SortGame() {
         <button class="chip" onPointerDown={() => haptic.tap()} onClick={() => (menu.value = true)} aria-label="Menu">
           Sort · {configName(c)} <ChevronDown />
         </button>
-        <TimerView timer={timer} sub={plural(moves.value)} />
+        {previous.value ? (
+          <GoBackButton onPress={goBack} />
+        ) : (
+          <TimerView timer={timer} sub={plural(moves.value)} />
+        )}
       </header>
       <main class="stage stage--sort">
         <Tubes />

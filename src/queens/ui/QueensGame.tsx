@@ -1,5 +1,6 @@
 import { useSignal } from '@preact/signals';
-import { restoreOrStart, puzzle, settings, timer, won } from '../state/store';
+import { goBack, previous, restoreOrStart, puzzle, settings, timer, won } from '../state/store';
+import { GoBackButton } from '../../shared/GoBackButton';
 import { Board } from './Board';
 import { haptic } from '../../shared/haptics';
 import { ChevronDown } from '../../shared/icons';
@@ -25,7 +26,7 @@ export function QueensGame() {
         >
           Queens · {n}×{n}{settings.value.hard ? ' · Hard' : ''} <ChevronDown />
         </button>
-        <TimerView timer={timer} />
+        {previous.value ? <GoBackButton onPress={goBack} /> : <TimerView timer={timer} />}
       </header>
       <main class="stage">
         <Board />
