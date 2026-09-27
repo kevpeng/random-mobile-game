@@ -1,5 +1,5 @@
 import { mulberry32 } from '../../shared/rng';
-import { endlessWave, type GateKind, type LevelSpec, type WaveSpec } from './levels';
+import { endlessWave, gateShift, type GateKind, type GateMotion, type LevelSpec, type WaveSpec } from './levels';
 import { Pool } from './pool';
 
 export const STEP = 1 / 60;
@@ -17,6 +17,13 @@ export const MAX_PLAYERS = 2500;
 export const MAX_ENEMIES = 1500;
 const CELL = 0.25;
 const SEEK_RANGE = 1.1;
+/**
+ * Half-width of the enemy tower (lane units, centred on x = 0). Units only hit
+ * the tower if they arrive inside this footprint; the rest walk on past it.
+ */
+export const TOWER_HALF = 0.5;
+/** Units that miss the tower are removed once they are this far past its line. */
+const PAST_TOWER = 0.8;
 /** Seconds a + gate needs to recharge after adding its units. */
 export const ADD_COOLDOWN = 1;
 
@@ -42,9 +49,19 @@ export function stats(u: Upgrades) {
 export interface Gate {
   id: number;
   bit: number;
+  /** Index of the gate row this panel belongs to (panels in a row move together). */
+  row: number;
+  /** Current position (moves over time for rows with motion; see gateShift). */
   z: number;
   x0: number;
   x1: number;
+  /** Position at t = 0 (the layout's rest position). */
+  bz: number;
+  bx0: number;
+  bx1: number;
+  /** z at the previous step, for crossing tests against a moving gate. */
+  pz: number;
+  move?: GateMotion;
   kind: GateKind;
   n: number;
   counter: number; // ÷ gates: units seen
@@ -114,18 +131,24 @@ export class World {
       rows.unshift({ z: 1.4, panels: [{ kind: 'mul', n: 1 + upgrades.boost, x0: -1, x1: 1 }] });
     }
     this.gates = rows
-      .flatMap((r) => r.panels.map((p) => ({ ...p, z: r.z })))
+      .flatMap((r, row) => r.panels.map((p) => ({ kind: p.kind, n: p.n, x0: p.x0, x1: p.x1, z: r.z, row, move: r.move })))
       .slice(0, 32)
       .map((p, id) => ({
         ...p,
         id,
         bit: 1 << id,
+        bz: p.z,
+        bx0: p.x0,
+        bx1: p.x1,
+        pz: p.z,
         counter: 0,
         cool: 0,
         remaining: p.kind === 'sub' ? p.n : 0,
         broken: false,
         flash: 9,
       }));
+    this.placeGates();
+    for (const g of this.gates) g.pz = g.z;
     for (const w of spec.waves) this.schedule(w);
     this.rows = Math.ceil(this.length / CELL) + 2;
     this.head = new Int32Array(this.cols * this.rows);
@@ -139,6 +162,18 @@ export class World {
     // Keep the not-yet-spawned tail sorted by time.
     const tail = this.spawns.splice(this.nextSpawn).sort((a, b) => a.t - b.t);
     this.spawns.push(...tail);
+  }
+
+  /** Moves every gate to its position at the current sim time (a pure function of time and params). */
+  private placeGates(): void {
+    for (const g of this.gates) {
+      g.pz = g.z;
+      if (!g.move) continue;
+      const { dx, dz } = gateShift(g.move, this.time);
+      g.x0 = g.bx0 + dx;
+      g.x1 = g.bx1 + dx;
+      g.z = g.bz + dz;
+    }
   }
 
   private emit(e: MobEvent): void {
@@ -155,6 +190,7 @@ export class World {
       g.flash += dt;
       g.cool = Math.max(0, g.cool - dt);
     }
+    this.placeGates();
 
     // Cannon: glide toward the finger, fire on a fixed cadence.
     this.cannonX += (this.targetX - this.cannonX) * Math.min(1, dt * 18);
@@ -216,19 +252,26 @@ export class World {
 
       // Gates crossed this step.
       for (const g of this.gates) {
-        if (g.broken || p.gates[i] & g.bit || z0 >= g.z || z1 < g.z) continue;
+        // Crossed if it was in front of the gate last step and is at/behind it now.
+        if (g.broken || p.gates[i] & g.bit || z0 >= g.pz || z1 < g.z) continue;
         if (p.x[i] < g.x0 || p.x[i] > g.x1) continue;
         p.gates[i] |= g.bit;
         if (!this.applyGate(g, i)) continue units; // unit was destroyed
       }
 
+      // Units keep going straight; only those arriving inside the tower's
+      // footprint hit it. The rest walk on past and leave the field.
       if (p.z[i] >= reach) {
-        if (!this.endless) {
+        if (this.endless) {
+          p.remove(i);
+        } else if (Math.abs(p.x[i]) <= TOWER_HALF) {
           this.towerHp -= p.hp[i];
           this.towerFlash = 0;
           this.emit({ type: 'tower', dmg: p.hp[i] });
+          p.remove(i);
+        } else if (p.z[i] >= this.length + PAST_TOWER) {
+          p.remove(i);
         }
-        p.remove(i);
       }
     }
     if (!this.endless && this.towerHp <= 0) {

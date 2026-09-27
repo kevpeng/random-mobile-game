@@ -40,6 +40,7 @@ export function MobGame() {
   const result = useSignal({ coins: 0, score: 0, best: false });
   const glError = useSignal<string | null>(null);
   const world = useRef<World | null>(null);
+  const view = useRef<Renderer | null>(null);
 
   const newWorld = (m: Mode) => {
     const p = progress.value;
@@ -64,6 +65,7 @@ export function MobGame() {
       glError.value = String((e as Error).message ?? e);
       return;
     }
+    view.current = renderer;
     const overlay = new Overlay(uiCanvas.current!);
     const dark = matchMedia('(prefers-color-scheme: dark)');
     renderer.setDark(dark.matches);
@@ -210,6 +212,7 @@ export function MobGame() {
 
     return () => {
       cancelAnimationFrame(raf);
+      view.current = null;
       ro.disconnect();
       dark.removeEventListener('change', onScheme);
       document.removeEventListener('visibilitychange', onVis);
@@ -244,15 +247,38 @@ export function MobGame() {
     }
   };
 
-  // --- steering: relative horizontal drag anywhere on the play field ------------
+  // --- steering -------------------------------------------------------------------
+  // Touch/pen: relative horizontal drag anywhere on the play field.
+  // Mouse (desktop): the cannon follows the pointer, hovering or dragging.
   const drag = useRef<{ id: number; x: number; target: number } | null>(null);
+  /** Aims the cannon straight at the lane position under the mouse. */
+  const aimAtMouse = (e: PointerEvent) => {
+    const w = world.current;
+    const r = view.current;
+    if (!w || !r || screen.value !== 'playing') return;
+    // At a fixed depth the projection is linear in x, so interpolate between the lane edges.
+    const a = r.toScreen(-1, 0, CANNON_Z), b = r.toScreen(1, 0, CANNON_Z);
+    if (!a || !b || a.x === b.x) return;
+    const px = e.clientX - host.current!.getBoundingClientRect().left;
+    const x = -1 + (2 * (px - a.x)) / (b.x - a.x);
+    w.targetX = Math.max(-0.97, Math.min(0.97, x));
+  };
   const onDown = (e: PointerEvent) => {
     const w = world.current;
     if (!w || screen.value !== 'playing') return;
+    if (e.pointerType === 'mouse') {
+      aimAtMouse(e);
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); // keep aiming if the drag leaves the stage
+      return;
+    }
     drag.current = { id: e.pointerId, x: e.clientX, target: w.targetX };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onMove = (e: PointerEvent) => {
+    if (e.pointerType === 'mouse') {
+      aimAtMouse(e);
+      return;
+    }
     const d = drag.current;
     const w = world.current;
     if (!d || !w || e.pointerId !== d.id) return;
@@ -265,6 +291,7 @@ export function MobGame() {
 
   const p = progress.value;
   const s = screen.value;
+  const finePointer = typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches;
   const openShop = () => (screen.value = 'shop');
 
   return (
@@ -310,7 +337,7 @@ export function MobGame() {
       {s === 'menu' && !glError.value && (
         <div class="mob__panel" role="dialog" aria-label="Mob">
           <h2>Level {p.level}</h2>
-          <p>Drag to aim. Shoot through the good gates, avoid the red ones, and knock the tower down.</p>
+          <p>{finePointer ? 'Move the mouse to aim.' : 'Drag to aim.'} Shoot through the good gates, avoid the red ones, and knock the tower down.</p>
           <button class="btn btn--primary" onClick={() => start('level')}>
             Play level {p.level}
           </button>

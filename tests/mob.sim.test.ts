@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { endlessSpec, endlessWave, generateLevel, levelSpec, type LevelSpec, type PanelSpec } from '../src/mob/sim/levels';
+import { endlessSpec, endlessWave, gateShift, generateLevel, levelMotion, levelSpec, type LevelSpec, type PanelSpec } from '../src/mob/sim/levels';
 import { playLevel } from '../src/mob/sim/bot';
 import { autoBuy, lossCoins, winCoins } from '../src/mob/sim/economy';
-import { ADD_COOLDOWN, NO_UPGRADES, BASE_HP, CHAMPION_HP, MAX_PLAYERS, World, radius } from '../src/mob/sim/world';
+import { ADD_COOLDOWN, NO_UPGRADES, BASE_HP, CHAMPION_HP, MAX_PLAYERS, TOWER_HALF, World, radius } from '../src/mob/sim/world';
 
 const lane = (panels: Omit<PanelSpec, 'x0' | 'x1'>): PanelSpec[] => [{ ...panels, x0: -1, x1: 1 }];
 
@@ -84,6 +84,74 @@ describe('gates', () => {
   });
 });
 
+describe('moving gates', () => {
+  const gatePos = (w: World) => w.gates.map((g) => [g.x0, g.x1, g.z]);
+  const runTo = (w: World, seconds: number) => {
+    for (let s = 0; s < seconds * 60; s++) w.step();
+    return w;
+  };
+
+  it('move deterministically: same seed and time, same positions', () => {
+    const a = runTo(new World(levelSpec(9), NO_UPGRADES, 7), 7.5);
+    const b = runTo(new World(levelSpec(9), NO_UPGRADES, 7), 7.5);
+    expect(gatePos(a)).toEqual(gatePos(b));
+    // A pure function of time and the gate's own params: a different seed, steering
+    // and fighting change nothing about where the gates are.
+    const c = new World(levelSpec(9), NO_UPGRADES, 12345);
+    for (let s = 0; s < 7.5 * 60; s++) {
+      c.targetX = Math.sin(s / 17);
+      c.step();
+    }
+    expect(gatePos(c)).toEqual(gatePos(a));
+    for (const g of a.gates) {
+      const { dx, dz } = gateShift(g.move, a.time);
+      expect(g.x0).toBeCloseTo(g.bx0 + dx, 12);
+      expect(g.x1).toBeCloseTo(g.bx1 + dx, 12);
+      expect(g.z).toBeCloseTo(g.bz + dz, 12);
+    }
+  });
+
+  it('actually move, and stay inside the lane', () => {
+    const w = new World(levelSpec(9), NO_UPGRADES, 1);
+    const start = gatePos(w);
+    runTo(w, 1);
+    expect(gatePos(w)).not.toEqual(start);
+    for (let s = 0; s < 60 * 30; s++) {
+      w.step();
+      for (const g of w.gates) {
+        expect(g.x0).toBeGreaterThanOrEqual(-1 - 1e-9);
+        expect(g.x1).toBeLessThanOrEqual(1 + 1e-9);
+        expect(g.z).toBeLessThanOrEqual(g.bz);
+        expect(g.z).toBeGreaterThan(1.5);
+      }
+    }
+  });
+
+  it('start still on level 1, then get gently wider and faster', () => {
+    expect(levelMotion(1, 0)).toBeUndefined();
+    expect(new World(levelSpec(1)).gates.every((g) => !g.move)).toBe(true);
+    const m2 = levelMotion(2, 0)!, m8 = levelMotion(8, 0)!, m15 = levelMotion(15, 0)!;
+    expect(m2.ax).toBeLessThan(0.1);
+    expect(m8.ax).toBeGreaterThan(m2.ax);
+    expect(m15.ax).toBeGreaterThan(m8.ax);
+    expect(m15.period).toBeLessThan(m2.period);
+    expect(m15.az).toBeGreaterThan(m2.az);
+    // Endless mode uses them too.
+    expect(endlessSpec(5).gates.every((r) => r.move)).toBe(true);
+  });
+
+  it('only affect units the panel covers when they arrive', () => {
+    // A ×3 panel [-0.25, 0.25] slid right by 0.5 (≈ [0.25, 0.75]) while the units pass.
+    const move = { ax: 0.5, az: 0, period: 1000, phase: Math.PI / 2 };
+    const w = new World({ length: 16, towerHp: 1000, gates: [{ z: 5, move, panels: [{ kind: 'mul', n: 3, x0: -0.25, x1: 0.25 }] }], waves: [] });
+    w.firing = false;
+    w.players.add(0, 4.95, 1); // where the gate was at rest: now a gap
+    w.players.add(0.5, 4.95, 1); // where it has slid to
+    for (let s = 0; s < 6; s++) w.step();
+    expect(field(w)).toBe(4);
+  });
+});
+
 describe('combat', () => {
   it('trades 1:1', () => {
     const w = world();
@@ -120,6 +188,27 @@ describe('win / lose', () => {
     for (let s = 0; s < 3 && w.state === 'playing'; s++) w.step();
     expect(w.towerHp).toBe(0);
     expect(w.state).toBe('won');
+  });
+  it('units fly straight: one fired off to the side of the tower walks past it', () => {
+    const w = world(undefined, { towerHp: 5 });
+    const x = TOWER_HALF + 0.3;
+    w.players.add(x, 14, 3);
+    let minX = x, maxX = x;
+    for (let s = 0; s < 120 && w.players.n > 0; s++) {
+      w.step();
+      if (w.players.n) {
+        minX = Math.min(minX, w.players.x[0]);
+        maxX = Math.max(maxX, w.players.x[0]);
+      }
+    }
+    expect(maxX - minX).toBeLessThan(1e-6); // no curving toward the tower
+    expect(w.players.n).toBe(0); // it walked off the end
+    expect(w.towerHp).toBe(5);
+    expect(w.state).toBe('playing');
+    // The same unit inside the footprint hits.
+    w.players.add(TOWER_HALF - 0.05, 15.5, 3);
+    for (let s = 0; s < 10; s++) w.step();
+    expect(w.towerHp).toBe(2);
   });
   it('enemies reaching the cannon line hurt the base; at zero it is lost', () => {
     const w = world();
