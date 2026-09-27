@@ -21,6 +21,9 @@ const UNIT_VIS = 1.45;
 const BIG_VIS = 1.1;
 /** World width of the cannon's footprint and of the castle's walls. */
 const TOWER_W = 2.0;
+const CANNON_W = 0.95;
+const CANNON_ANCHOR_Z = 0.02;
+const RECOIL_MS = 70;
 
 const MESH_VS = `#version 300 es
 in vec3 a_pos; in vec4 a_color;
@@ -250,8 +253,6 @@ const SHEET = {
   cannon: frameIndex('cannon_0'),
   tower: frameIndex('tower_0'),
 };
-/** Height of the castle's roof tips above its anchor, in multiples of TOWER_W. */
-const TOWER_TOP = (atlas.frames.tower_0.anchor[1] * atlas.frames.tower_0.h - 4) / atlas.frames.tower_0.unit;
 const asset = (path: string) => import.meta.env.BASE_URL + path;
 
 interface Art {
@@ -287,7 +288,8 @@ export class Renderer {
   width = 1;
   height = 1;
   /** Screen point just above the castle (for its health bar); updated every frame. */
-  towerTop: { x: number; y: number; scale: number } | null = null;
+  private lastShots = -1;
+  private recoilUntil = 0;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, premultipliedAlpha: true });
@@ -517,16 +519,15 @@ export class Renderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     // The track scrolls toward the camera as the crowd runs: texture coordinates move with it.
-    const sc = w.scroll;
+    const sc = w.belt;
 
     // ---- static-ish meshes: ground, lane, tower, cannon (opaque) ----
     this.verts.length = 0;
     this.tverts.length = 0;
     const L = w.length;
     const zFar = L + 3;
-    // The base comes into view as you near it.
-    const TZ = w.towerZ;
-    const showTower = !w.endless && TZ < zFar + 2;
+    // The mobs' castle stands at the far end, where the belt comes from.
+    const TZ = w.length;
     if (art) {
       // Grass: tiles come out roughly square on screen despite the depth squash.
       const gs = 2.4, gz = gs / DEPTH, X0 = -8, X1 = 8, Z0 = -4, Z1 = zFar + 8;
@@ -546,9 +547,13 @@ export class Renderer {
     const e = 0.07;
     this.box(-LANE - e / 2, zFar / 2 - 1, e, 0.08, zFar + 2, pal.edge, pal.edge, pal.edge);
     this.box(LANE + e / 2, zFar / 2 - 1, e, 0.08, zFar + 2, pal.edge, pal.edge, pal.edge);
-    // (the sim stops stepping once the level ends, so a final hit would otherwise flash forever)
-    const hit = w.towerFlash < 0.08 && w.state === 'playing';
-    const towerShake = w.towerFlash < 0.25 ? Math.sin(w.towerFlash * 90) * 0.04 * (1 - w.towerFlash / 0.25) : 0;
+    // Cannon recoil: the sim counts shots, so a change means it just fired.
+    const now = performance.now();
+    if (w.shots !== this.lastShots) {
+      if (w.shots > this.lastShots && this.lastShots >= 0) this.recoilUntil = now + RECOIL_MS;
+      this.lastShots = w.shots;
+    }
+    const cx = w.cannonX * LANE;
     const knobs: { x: number; z: number; c: RGB }[] = [];
     if (art) {
       for (const g of w.gates) {
@@ -561,12 +566,11 @@ export class Renderer {
         knobs.push({ x: x0, z: g.z, c: kc }, { x: x1, z: g.z, c: kc });
       }
     } else {
-      if (showTower) {
-        const face = hit ? (pal.tower.map((c) => c + (1 - c) * 0.45) as RGB) : pal.tower;
-        this.box(towerShake, TZ + 0.2, TOWER_HALF * 2 * LANE, 1.5, 0.9, pal.towerSide, pal.towerSide, face);
-        // Battlements
-        for (let i = -2; i <= 2; i++) this.box(towerShake + i * 0.3, TZ - 0.1, 0.18, 1.72, 0.3, pal.towerSide, pal.towerSide, face);
-      }
+      this.box(0, TZ + 0.2, TOWER_HALF * 2 * LANE, 1.5, 0.9, pal.towerSide, pal.towerSide, pal.tower);
+      // Battlements
+      for (let i = -2; i <= 2; i++) this.box(i * 0.3, TZ - 0.1, 0.18, 1.72, 0.3, pal.towerSide, pal.towerSide, pal.tower);
+      this.box(cx, 0.05, 0.42, 0.22, 0.42, pal.cannon, pal.cannon, pal.cannon);
+      this.box(cx, 0.32, 0.14, 0.16, 0.5, pal.cannon, pal.cannon, pal.cannon);
     }
     const opaque = this.verts.length;
 
@@ -650,7 +654,10 @@ export class Renderer {
         const bob = flat ? 0 : Math.abs(Math.sin(en.age[i] * 12 + i)) * 0.03;
         put(en.x[i] * LANE, flat ? 0.01 : r + bob, en.z[i], r, en.hp[i] > 1 ? pal.brute : pal.enemy);
       }
-      if (flat && art && showTower) put(towerShake, 0.01, TZ + 0.3, TOWER_W * 0.6, pal.enemy);
+      if (flat && art) {
+        put(cx, 0.01, CANNON_ANCHOR_Z + 0.1, CANNON_W * 0.6, pal.player);
+        put(0, 0.01, TZ + 0.3, TOWER_W * 0.6, pal.enemy);
+      }
       return n;
     };
 
@@ -677,9 +684,7 @@ export class Renderer {
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
     }
 
-    this.towerTop = null;
-    if (art) this.drawSprites(w, art.atlas, view, proj, towerShake, hit, showTower);
-    else if (showTower) this.towerTop = this.toScreen(0, 2.05, TZ);
+    if (art) this.drawSprites(w, art.atlas, view, proj, now);
 
     // Gates: translucent, depth-tested against units but not writing depth.
     gl.enable(gl.BLEND);
@@ -715,7 +720,7 @@ export class Renderer {
   }
 
   /** Units, cannon and castle from the atlas: one instanced, alpha-tested draw. */
-  private drawSprites(w: World, tex: WebGLTexture, view: Mat4, proj: Mat4, towerShake: number, hit: boolean, showTower: boolean): void {
+  private drawSprites(w: World, tex: WebGLTexture, view: Mat4, proj: Mat4, now: number): void {
     const gl = this.gl;
     const f = this.spriteInst;
     let n = 0;
@@ -736,19 +741,8 @@ export class Renderer {
       const frame = (big ? SHEET.brute : SHEET.enemy) + ((Math.floor(en.age[i] * (big ? 7 : 9)) + i) & 3);
       put(en.x[i] * LANE, 0, en.z[i], size, frame);
     }
-    if (showTower) {
-      const frac = w.towerHp / w.towerMax;
-      const state = frac > 0.66 ? 0 : frac > 0.33 ? 1 : 2;
-      const tz = w.towerZ + 0.2;
-      put(towerShake, 0, tz, TOWER_W, SHEET.tower + state, hit ? 0.45 : 0);
-      // The health bar goes just above the roof tips: the anchor in view space, raised along
-      // the view's up axis (as the sprite is), projected to CSS pixels.
-      const vx = view[8] * tz + view[12], vy = view[9] * tz + view[13] + TOWER_TOP * TOWER_W, vz = view[10] * tz + view[14];
-      const cxp = proj[0] * vx + proj[4] * vy + proj[8] * vz + proj[12];
-      const cyp = proj[1] * vx + proj[5] * vy + proj[9] * vz + proj[13];
-      const cw = proj[3] * vx + proj[7] * vy + proj[11] * vz + proj[15];
-      if (cw > 0) this.towerTop = { x: ((cxp / cw) * 0.5 + 0.5) * this.width, y: (0.5 - (cyp / cw) * 0.5) * this.height - 8, scale: 1 / cw };
-    }
+    put(w.cannonX * LANE, 0, CANNON_ANCHOR_Z, CANNON_W, SHEET.cannon + (now < this.recoilUntil ? 1 : 0));
+    put(0, 0, w.length + 0.2, TOWER_W, SHEET.tower);
 
     gl.useProgram(this.sprite);
     gl.uniformMatrix4fv(gl.getUniformLocation(this.sprite, 'u_view'), false, view);
