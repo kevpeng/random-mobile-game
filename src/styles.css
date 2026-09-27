@@ -110,6 +110,7 @@ button {
 .top {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
+  column-gap: 6px;
   align-items: center;
   padding: 12px 16px 4px;
   height: 60px;
@@ -181,6 +182,31 @@ button {
 }
 .back__label {
   display: none;
+}
+/* "Go back" to the previous puzzle, in the clock's spot until the first move. */
+.goback {
+  justify-self: end;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  animation: fade-in 0.2s ease-out;
+  transition: transform 0.12s var(--spring);
+}
+.goback:active,
+.goback.is-pressed {
+  transform: scale(0.94);
+}
+.goback svg {
+  width: 15px;
+  height: 15px;
 }
 /* Desktop / tablet: a labelled "‹ Home" pill instead of a bare chevron. */
 @media (min-width: 700px) {

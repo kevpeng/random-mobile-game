@@ -76,6 +76,7 @@ export function endGesture(): 'win' | 'conflict' | 'change' | null {
   const start = gestureStart;
   gestureStart = null;
   if (!start || start === marks.value) return null;
+  previous.value = null; // played on: this is the game now
   history.value = [...history.value.slice(-HISTORY_CAP + 1), start];
   return checkWin() ? 'win' : conflictCells.value.size ? 'conflict' : 'change';
 }
@@ -139,6 +140,7 @@ export function hint(): boolean {
   }
   next[target] = QUEEN;
   batch(() => {
+    previous.value = null;
     history.value = [...history.value, marks.value];
     marks.value = next;
     hintsUsed.value++;
@@ -163,9 +165,47 @@ function startPuzzle(p: Puzzle): void {
   });
 }
 
+interface QueensSnapshot {
+  puzzle: Puzzle;
+  marks: number[];
+  history: number[][];
+  hints: number;
+  elapsed: number;
+}
+
+/** The game "New" replaced, offered back until the first move on the new one. */
+export const previous = signal<QueensSnapshot | null>(null);
+
 export async function newGame(size = settings.value.size): Promise<void> {
+  const p = puzzle.value;
+  // Keep a game worth returning to; pressing New again on an untouched puzzle
+  // keeps the original one.
+  if (p && !won.value && marks.value.some((m) => m !== EMPTY)) {
+    previous.value = {
+      puzzle: p,
+      marks: marks.value,
+      history: history.value,
+      hints: hintsUsed.value,
+      elapsed: elapsedMs(),
+    };
+  } else if (won.value) previous.value = null;
   if (size !== settings.value.size) settings.value = { ...settings.value, size };
   startPuzzle(await takePuzzle(size));
+}
+
+export function goBack(): void {
+  const s = previous.value;
+  if (!s) return;
+  startPuzzle(s.puzzle);
+  batch(() => {
+    previous.value = null;
+    if (s.puzzle.size !== settings.value.size) settings.value = { ...settings.value, size: s.puzzle.size };
+    marks.value = s.marks;
+    history.value = s.history;
+    hintsUsed.value = s.hints;
+  });
+  timer.reset(s.elapsed);
+  timer.start();
 }
 
 let restored = false;

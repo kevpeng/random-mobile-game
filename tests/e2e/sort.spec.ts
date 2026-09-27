@@ -355,3 +355,41 @@ test('one ball ping-ponging between two tubes shows "Going in circles" right awa
   await page.reload();
   await expect(dialog).toBeVisible({ timeout: 200 });
 });
+
+test('"New" by mistake: Go back restores the previous puzzle until you play on', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.game-card', { hasText: 'Sort' }).click();
+  const { puzzle, stacks } = await savedPuzzle(page);
+  const cap = puzzle.config.height;
+  const cs = colorsOf(puzzle, stacks);
+  const [f, t] = solve(cs, cap)![0];
+  await tapTube(page, f);
+  await tapTube(page, t);
+  await expect(page.locator('.timer small')).toHaveText('1 move');
+  const played = (await savedPuzzle(page)).stacks;
+
+  const goBack = page.getByRole('button', { name: 'Go back to previous puzzle' });
+  await expect(goBack).toHaveCount(0);
+  await page.getByRole('button', { name: 'New' }).click();
+  await expect(goBack).toBeVisible();
+  await page.screenshot({ path: 'test-results/sort-11-goback.png' });
+
+  await goBack.click();
+  await expect(goBack).toHaveCount(0);
+  await expect(page.locator('.timer small')).toHaveText('1 move');
+  const back = await savedPuzzle(page);
+  expect(back.puzzle.seed).toBe(puzzle.seed);
+  expect(back.stacks).toEqual(played);
+  // Undo still works on the restored game.
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.locator('.timer small')).toHaveText('2 moves');
+
+  // Once you play on the new puzzle, the offer goes away.
+  await page.getByRole('button', { name: 'New' }).click();
+  await expect(goBack).toBeVisible();
+  const fresh = await savedPuzzle(page);
+  const [f2, t2] = solve(colorsOf(fresh.puzzle, fresh.stacks), cap)![0];
+  await tapTube(page, f2);
+  await tapTube(page, t2);
+  await expect(goBack).toHaveCount(0);
+});

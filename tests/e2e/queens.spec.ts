@@ -102,3 +102,32 @@ test('dark mode', async ({ page }) => {
   await expect(page.locator('.cell').first()).toBeVisible();
   await page.screenshot({ path: 'test-results/06-dark.png' });
 });
+
+test('"New" by mistake: Go back restores the previous puzzle until you play on', async ({ page }) => {
+  await openGame(page);
+  const first = await saved(page);
+  await tap(page, 0); // ✕ in the corner: this game has progress
+  await expect(page.locator('.timer')).toBeVisible();
+  const goBack = page.getByRole('button', { name: 'Go back to previous puzzle' });
+  await expect(goBack).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'New' }).click();
+  await expect(goBack).toBeVisible();
+  await page.screenshot({ path: 'test-results/queens-goback.png' });
+  await expect.poll(async () => JSON.stringify((await saved(page)).puzzle)).not.toBe(JSON.stringify(first.puzzle));
+
+  // New again on the untouched puzzle still returns to the original.
+  await page.getByRole('button', { name: 'New' }).click();
+  await goBack.click();
+  await expect(goBack).toHaveCount(0);
+  await expect(page.locator('.timer')).toBeVisible();
+  const back = await saved(page);
+  expect(back.puzzle).toEqual(first.puzzle);
+  expect((back as unknown as { marks: number[] }).marks[0]).not.toBe(0);
+
+  // Once you play on the new puzzle, the offer goes away.
+  await page.getByRole('button', { name: 'New' }).click();
+  await expect(goBack).toBeVisible();
+  await tap(page, 5);
+  await expect(goBack).toHaveCount(0);
+});

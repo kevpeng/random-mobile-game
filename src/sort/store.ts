@@ -144,9 +144,49 @@ function start(p: SortPuzzle): void {
   timer.reset();
 }
 
+interface SortSnapshot {
+  config: SortConfig;
+  puzzle: SortPuzzle;
+  stacks: number[][];
+  history: number[][][];
+  moves: number;
+  elapsed: number;
+}
+
+/** The game "New" replaced, offered back until the first move on the new one. */
+export const previous = signal<SortSnapshot | null>(null);
+
 export async function newGame(c: SortConfig = config.value): Promise<void> {
+  const p = puzzle.value;
+  // Keep a game worth returning to; pressing New again on an untouched puzzle
+  // keeps the original one.
+  if (p && !won.value && moves.value > 0) {
+    previous.value = {
+      config: config.value,
+      puzzle: p,
+      stacks: stacks.value,
+      history: history.value,
+      moves: moves.value,
+      elapsed: timer.elapsed(),
+    };
+  } else if (won.value) previous.value = null;
   config.value = c;
   start(await take(c));
+}
+
+export function goBack(): void {
+  const s = previous.value;
+  if (!s) return;
+  start(s.puzzle);
+  batch(() => {
+    previous.value = null;
+    config.value = s.config;
+    stacks.value = s.stacks;
+    history.value = s.history;
+    moves.value = s.moves;
+  });
+  timer.reset(s.elapsed);
+  if (!stuck.value) timer.start();
 }
 
 export function restart(): void {
@@ -185,6 +225,7 @@ export function tapStack(i: number): TapResult {
   }
   const next = applyMove(stacks.value, sel, i, n);
   batch(() => {
+    previous.value = null; // played on: this is the game now
     history.value = [...history.value, stacks.value];
     stacks.value = next;
     moves.value++;
