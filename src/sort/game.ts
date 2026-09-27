@@ -46,22 +46,25 @@ export function applyMove<T>(stacks: T[][], from: number, to: number, count: num
 }
 
 /**
- * Whether any legal move would change the position meaningfully. Moving a
- * finished tube, or pouring a single-colour stack into an empty tube, doesn't count.
+ * Legal moves that change the position meaningfully (with how many pieces each
+ * carries). Moving a finished tube, or pouring a single-colour stack into an
+ * empty tube, doesn't count.
  */
-export function hasUsefulMove(stacks: Stacks, cap: number): boolean {
+export function usefulMoves(stacks: Stacks, cap: number): [from: number, to: number, count: number][] {
+  const out: [number, number, number][] = [];
   for (let from = 0; from < stacks.length; from++) {
     const src = stacks[from];
     if (!src.length || isComplete(src, cap)) continue;
     const uniform = topRun(src) === src.length;
     for (let to = 0; to < stacks.length; to++) {
-      if (!moveCount(stacks, from, to, cap)) continue;
-      if (uniform && stacks[to].length === 0) continue;
-      return true;
+      const n = moveCount(stacks, from, to, cap);
+      if (n && !(uniform && stacks[to].length === 0)) out.push([from, to, n]);
     }
   }
-  return false;
+  return out;
 }
+
+export const hasUsefulMove = (stacks: Stacks, cap: number): boolean => usefulMoves(stacks, cap).length > 0;
 
 /**
  * Whether every move left just cycles between a handful of positions — e.g.
@@ -70,26 +73,17 @@ export function hasUsefulMove(stacks: Stacks, cap: number): boolean {
  * with false past `limit` positions, leaving big searches to analyze().
  */
 export function trappedInLoop(stacks: Stacks, cap: number, limit = 24): boolean {
-  const key = (st: Stacks) => st.map((s) => s.join(',')).sort().join('|');
-  const seen = new Set([key(stacks)]);
+  const seen = new Set([positionKey(stacks)]);
   const queue = [stacks];
   for (let i = 0; i < queue.length; i++) {
-    const st = queue[i];
-    if (isSolved(st, cap)) return false;
-    for (let from = 0; from < st.length; from++) {
-      const src = st[from];
-      if (!src.length || isComplete(src, cap)) continue;
-      const uniform = topRun(src) === src.length;
-      for (let to = 0; to < st.length; to++) {
-        const n = moveCount(st, from, to, cap);
-        if (!n || (uniform && st[to].length === 0)) continue;
-        const next = applyMove(st, from, to, n);
-        const k = key(next);
-        if (seen.has(k)) continue;
-        if (seen.size >= limit) return false;
-        seen.add(k);
-        queue.push(next);
-      }
+    if (isSolved(queue[i], cap)) return false;
+    for (const [from, to, n] of usefulMoves(queue[i], cap)) {
+      const next = applyMove(queue[i], from, to, n);
+      const k = positionKey(next);
+      if (seen.has(k)) continue;
+      if (seen.size >= limit) return false;
+      seen.add(k);
+      queue.push(next);
     }
   }
   return true;
@@ -113,12 +107,14 @@ export interface Analysis {
 /**
  * Like solve(), but says whether the search was exhaustive. With
  * `complete && !path` the position is a proven dead end (the pruning below
- * only skips moves that can never matter).
+ * only skips moves that can never matter). Positions in `avoid` (e.g. ones
+ * already played) are treated as visited, so the route never passes through them.
  */
-export function analyze(start: Stacks, cap: number, budget = 200_000): Analysis {
-  const seen = new Set<string>();
+export function analyze(start: Stacks, cap: number, budget = 200_000, avoid: Stacks[] = []): Analysis {
+  const key = positionKey;
+  const seen = new Set<string>(avoid.map(key));
+  seen.delete(key(start));
   const path: Move[] = [];
-  const key = (st: Stacks) => st.map((s) => s.join(',')).sort().join('|');
   let exhausted = false;
 
   const go = (st: Stacks): boolean => {
@@ -162,6 +158,12 @@ export function analyze(start: Stacks, cap: number, budget = 200_000): Analysis 
   const found = go(start);
   return { path: found ? path : null, complete: found || !exhausted };
 }
+
+/** Same position regardless of tube order (tubes are interchangeable). */
+export function positionKey(st: Stacks): string {
+  return st.map((s) => s.join(',')).sort().join('|');
+}
+
 
 /**
  * For a dead end: how many moves back (1..history.length) the most recent
