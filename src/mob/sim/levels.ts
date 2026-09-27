@@ -12,6 +12,60 @@ export interface PanelSpec {
 export interface GateRowSpec {
   z: number;
   panels: PanelSpec[];
+  /** Optional motion: the whole row slides sideways (and drifts toward the cannon) over time. */
+  move?: GateMotion;
+}
+
+/**
+ * How a gate row moves. Positions are a pure function of sim time and these
+ * params (see gateShift), so seeded runs stay reproducible.
+ */
+export interface GateMotion {
+  /** Sideways amplitude, in lane half-widths. */
+  ax: number;
+  /** How far the row drifts toward the cannon at the near end of its cycle (z units). */
+  az: number;
+  /** Seconds per side-to-side cycle. */
+  period: number;
+  /** Radians. */
+  phase: number;
+}
+
+/** Offset of a moving row at sim time `t`: dx across the lane, dz along it (≤ 0, toward the cannon). */
+export function gateShift(m: GateMotion | undefined, t: number): { dx: number; dz: number } {
+  if (!m) return { dx: 0, dz: 0 };
+  const a = (2 * Math.PI * t) / m.period + m.phase;
+  // The drift runs on a slower cycle than the sway, so the pattern doesn't repeat every sweep.
+  const b = (2 * Math.PI * t) / (m.period * 1.5) + m.phase;
+  return { dx: m.ax * Math.sin(a), dz: -m.az * (0.5 - 0.5 * Math.cos(b)) };
+}
+
+/**
+ * Motion for gate row `r` on level `n`: none on level 1, then gently wider,
+ * faster and deeper with each level (capped).
+ */
+export function levelMotion(n: number, r: number): GateMotion | undefined {
+  if (n < 2) return undefined;
+  const k = n - 2;
+  return {
+    ax: Math.min(0.4, 0.06 + 0.025 * k),
+    az: Math.min(0.8, 0.06 * k),
+    period: Math.max(3.6, 7 - 0.25 * k),
+    phase: ((r * 2.4 + n * 0.9) % (2 * Math.PI)),
+  };
+}
+
+/**
+ * Gives each row its level motion, narrowing the panels so the row stays
+ * inside the lane over its whole sweep (the uncovered edge is a gate-free gap).
+ */
+export function withMotion(n: number, rows: GateRowSpec[]): GateRowSpec[] {
+  return rows.map((row, r) => {
+    const move = levelMotion(n, r);
+    if (!move) return row;
+    const s = 1 - move.ax;
+    return { ...row, move, panels: row.panels.map((p) => ({ ...p, x0: p.x0 * s, x1: p.x1 * s })) };
+  });
 }
 
 export interface WaveSpec {
@@ -95,7 +149,8 @@ export function levelWaves(n: number, power = 2, minutes = 5): WaveSpec[] {
 export const towerHp = (n: number, power = 2) => Math.round(105 * Math.pow(1.2, n - 1) * power);
 
 /** Fills in a level's tower and waves from its gate layout. */
-function finish(n: number, length: number, gates: GateRowSpec[]): LevelSpec {
+function finish(n: number, length: number, rows: GateRowSpec[]): LevelSpec {
+  const gates = withMotion(n, rows);
   const power = bestMultiplier(gates);
   return { length, gates, towerHp: towerHp(n, power), waves: levelWaves(n, power) };
 }

@@ -1,5 +1,5 @@
 import { isGood } from '../sim/levels';
-import { radius, type World } from '../sim/world';
+import { radius, TOWER_HALF, type World } from '../sim/world';
 import atlas from './atlas.json';
 import { lookAt, multiply, perspective, project, type Mat4 } from './math';
 
@@ -564,7 +564,7 @@ export class Renderer {
     } else {
       if (!w.endless) {
         const face = hit ? (pal.tower.map((c) => c + (1 - c) * 0.45) as RGB) : pal.tower;
-        this.box(towerShake, L + 0.2, 1.5, 1.5, 0.9, pal.towerSide, pal.towerSide, face);
+        this.box(towerShake, L + 0.2, TOWER_HALF * 2 * LANE, 1.5, 0.9, pal.towerSide, pal.towerSide, face);
         // Battlements
         for (let i = -2; i <= 2; i++) this.box(towerShake + i * 0.3, L - 0.1, 0.18, 1.72, 0.3, pal.towerSide, pal.towerSide, face);
       }
